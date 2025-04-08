@@ -1,3 +1,6 @@
+// Copyright (c) 2019 Titanous, daeMOn63 and Contributors to the Eclipse Foundation.
+// SPDX-License-Identifier: Apache-2.0
+
 package biscuit
 
 import (
