@@ -14,7 +14,7 @@ import (
 )
 
 const MinSchemaVersion uint32 = 3
-const MaxSchemaVersion uint32 = 3
+const MaxSchemaVersion uint32 = 4
 
 // defaultSymbolTable predefines some symbols available in every implementation, to avoid
 // transmitting them with every token
@@ -327,7 +327,7 @@ const (
 func (UnaryOp) Type() OpType {
 	return OpTypeUnary
 }
-func (op UnaryOp) convert(symbols *datalog.SymbolTable) datalog.Op {
+func (op UnaryOp) convert(_ *datalog.SymbolTable) datalog.Op {
 	switch op {
 	case UnaryNegate:
 		return datalog.UnaryOp{UnaryOpFunc: datalog.Negate{}}
@@ -340,7 +340,7 @@ func (op UnaryOp) convert(symbols *datalog.SymbolTable) datalog.Op {
 	}
 }
 
-func fromDatalogUnaryOp(symbols *datalog.SymbolTable, dlUnary datalog.UnaryOp) (Op, error) {
+func fromDatalogUnaryOp(_ *datalog.SymbolTable, dlUnary datalog.UnaryOp) (Op, error) {
 	switch dlUnary.UnaryOpFunc.Type() {
 	case datalog.UnaryNegate:
 		return UnaryNegate, nil
@@ -376,12 +376,16 @@ const (
 	BinaryOr
 	BinaryIntersection
 	BinaryUnion
+	BinaryBitwiseAnd
+	BinaryBitwiseOr
+	BinaryBitwiseXor
+	BinaryNotEqual
 )
 
 func (BinaryOp) Type() OpType {
 	return OpTypeBinary
 }
-func (op BinaryOp) convert(symbols *datalog.SymbolTable) datalog.Op {
+func (op BinaryOp) convert(_ *datalog.SymbolTable) datalog.Op {
 	switch op {
 	case BinaryLessThan:
 		return datalog.BinaryOp{BinaryOpFunc: datalog.LessThan{}}
@@ -417,12 +421,20 @@ func (op BinaryOp) convert(symbols *datalog.SymbolTable) datalog.Op {
 		return datalog.BinaryOp{BinaryOpFunc: datalog.Intersection{}}
 	case BinaryUnion:
 		return datalog.BinaryOp{BinaryOpFunc: datalog.Union{}}
+	case BinaryBitwiseAnd:
+		return datalog.BinaryOp{BinaryOpFunc: datalog.BitwiseAnd{}}
+	case BinaryBitwiseOr:
+		return datalog.BinaryOp{BinaryOpFunc: datalog.BitwiseOr{}}
+	case BinaryBitwiseXor:
+		return datalog.BinaryOp{BinaryOpFunc: datalog.BitwiseXor{}}
+	case BinaryNotEqual:
+		return datalog.BinaryOp{BinaryOpFunc: datalog.NotEqual{}}
 	default:
 		panic(fmt.Sprintf("biscuit: cannot convert invalid binary op type: %v", op))
 	}
 }
 
-func fromDatalogBinaryOp(symbols *datalog.SymbolTable, dbBinary datalog.BinaryOp) (Op, error) {
+func fromDatalogBinaryOp(_ *datalog.SymbolTable, dbBinary datalog.BinaryOp) (Op, error) {
 	switch dbBinary.BinaryOpFunc.Type() {
 	case datalog.BinaryLessThan:
 		return BinaryLessThan, nil
@@ -458,13 +470,22 @@ func fromDatalogBinaryOp(symbols *datalog.SymbolTable, dbBinary datalog.BinaryOp
 		return BinaryIntersection, nil
 	case datalog.BinaryUnion:
 		return BinaryUnion, nil
+	case datalog.BinaryBitwiseAnd:
+		return BinaryBitwiseAnd, nil
+	case datalog.BinaryBitwiseOr:
+		return BinaryBitwiseOr, nil
+	case datalog.BinaryBitwiseXor:
+		return BinaryBitwiseXor, nil
+	case datalog.BinaryNotEqual:
+		return BinaryNotEqual, nil
 	default:
 		return BinaryUndefined, fmt.Errorf("unsupported datalog binary op: %v", dbBinary.BinaryOpFunc.Type())
 	}
 }
 
 type Check struct {
-	Queries []Rule
+	CheckKind datalog.CheckKind
+	Queries   []Rule
 }
 
 func (c Check) convert(symbols *datalog.SymbolTable) datalog.Check {
@@ -474,7 +495,8 @@ func (c Check) convert(symbols *datalog.SymbolTable) datalog.Check {
 	}
 
 	return datalog.Check{
-		Queries: queries,
+		CheckKind: c.CheckKind,
+		Queries:   queries,
 	}
 }
 
@@ -489,7 +511,8 @@ func fromDatalogCheck(symbols *datalog.SymbolTable, dlCheck datalog.Check) (*Che
 	}
 
 	return &Check{
-		Queries: queries,
+		CheckKind: dlCheck.CheckKind,
+		Queries:   queries,
 	}, nil
 }
 
@@ -547,7 +570,7 @@ func (a Variable) String() string { return fmt.Sprintf("$%s", string(a)) }
 type Integer int64
 
 func (a Integer) Type() TermType { return TermTypeInteger }
-func (a Integer) convert(symbols *datalog.SymbolTable) datalog.Term {
+func (a Integer) convert(_ *datalog.SymbolTable) datalog.Term {
 	return datalog.Integer(a)
 }
 func (a Integer) String() string { return fmt.Sprintf("%d", a) }
@@ -563,7 +586,7 @@ func (a String) String() string { return fmt.Sprintf("%q", string(a)) }
 type Date time.Time
 
 func (a Date) Type() TermType { return TermTypeDate }
-func (a Date) convert(symbols *datalog.SymbolTable) datalog.Term {
+func (a Date) convert(_ *datalog.SymbolTable) datalog.Term {
 	return datalog.Date(time.Time(a).Unix())
 }
 func (a Date) String() string { return time.Time(a).Format(time.RFC3339) }
@@ -571,7 +594,7 @@ func (a Date) String() string { return time.Time(a).Format(time.RFC3339) }
 type Bytes []byte
 
 func (a Bytes) Type() TermType { return TermTypeBytes }
-func (a Bytes) convert(symbols *datalog.SymbolTable) datalog.Term {
+func (a Bytes) convert(_ *datalog.SymbolTable) datalog.Term {
 	return datalog.Bytes(a)
 }
 func (a Bytes) String() string { return fmt.Sprintf("hex:%s", hex.EncodeToString(a)) }
@@ -579,7 +602,7 @@ func (a Bytes) String() string { return fmt.Sprintf("hex:%s", hex.EncodeToString
 type Bool bool
 
 func (b Bool) Type() TermType { return TermTypeBool }
-func (b Bool) convert(symbols *datalog.SymbolTable) datalog.Term {
+func (b Bool) convert(_ *datalog.SymbolTable) datalog.Term {
 	return datalog.Bool(b)
 }
 func (b Bool) String() string { return fmt.Sprintf("%t", b) }

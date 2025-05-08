@@ -107,6 +107,8 @@ func tokenIDToProtoIDV2(input datalog.Term) (*pb.TermV2, error) {
 			return nil, errors.New("biscuit: failed to convert token ID to proto ID: set cannot contains variable")
 		case datalog.TermTypeSet:
 			return nil, errors.New("biscuit: failed to convert token ID to proto ID: set cannot contains other sets")
+		default:
+			// Ignore and continue
 		}
 
 		protoSet := make([]*pb.TermV2, 0, len(datalogSet))
@@ -225,8 +227,8 @@ func tokenRuleToProtoRuleV2(input datalog.Rule) (*pb.RuleV2, error) {
 
 func protoRuleToTokenRuleV2(input *pb.RuleV2) (*datalog.Rule, error) {
 	body := make([]datalog.Predicate, len(input.Body))
-	for i, pb := range input.Body {
-		b, err := protoPredicateToTokenPredicateV2(pb)
+	for i, pred := range input.Body {
+		b, err := protoPredicateToTokenPredicateV2(pred)
 		if err != nil {
 			return nil, err
 		}
@@ -381,6 +383,14 @@ func tokenExprBinaryToProtoExprBinary(op datalog.BinaryOp) (*pb.OpBinary, error)
 		pbBinaryKind = pb.OpBinary_Intersection
 	case datalog.BinaryUnion:
 		pbBinaryKind = pb.OpBinary_Union
+	case datalog.BinaryBitwiseAnd:
+		pbBinaryKind = pb.OpBinary_BitwiseAnd
+	case datalog.BinaryBitwiseOr:
+		pbBinaryKind = pb.OpBinary_BitwiseOr
+	case datalog.BinaryBitwiseXor:
+		pbBinaryKind = pb.OpBinary_BitwiseXor
+	case datalog.BinaryNotEqual:
+		pbBinaryKind = pb.OpBinary_NotEqual
 	default:
 		return nil, fmt.Errorf("biscuit: unsupported BinaryOpFunc type: %v", op.BinaryOpFunc.Type())
 	}
@@ -400,6 +410,8 @@ func protoExprBinaryToTokenExprBinary(op *pb.OpBinary) (datalog.BinaryOpFunc, er
 		binaryOp = datalog.GreaterOrEqual{}
 	case pb.OpBinary_Equal:
 		binaryOp = datalog.Equal{}
+	case pb.OpBinary_NotEqual:
+		binaryOp = datalog.NotEqual{}
 	case pb.OpBinary_Contains:
 		binaryOp = datalog.Contains{}
 	case pb.OpBinary_Prefix:
@@ -424,6 +436,12 @@ func protoExprBinaryToTokenExprBinary(op *pb.OpBinary) (datalog.BinaryOpFunc, er
 		binaryOp = datalog.Intersection{}
 	case pb.OpBinary_Union:
 		binaryOp = datalog.Union{}
+	case pb.OpBinary_BitwiseAnd:
+		binaryOp = datalog.BitwiseAnd{}
+	case pb.OpBinary_BitwiseOr:
+		binaryOp = datalog.BitwiseOr{}
+	case pb.OpBinary_BitwiseXor:
+		binaryOp = datalog.BitwiseXor{}
 	default:
 		return nil, fmt.Errorf("biscuit: unsupported proto OpBinary type: %v", op.Kind)
 	}
@@ -440,7 +458,17 @@ func tokenCheckToProtoCheckV2(input datalog.Check) (*pb.CheckV2, error) {
 		pbQueries[i] = q
 	}
 
+	var kind pb.CheckV2_Kind
+	switch input.CheckKind {
+	case datalog.CheckKindOne:
+		kind = pb.CheckV2_One
+	case datalog.CheckKindAll:
+		kind = pb.CheckV2_All
+	default:
+		return nil, errors.New("unsupported check kind")
+	}
 	return &pb.CheckV2{
+		Kind:    &kind,
 		Queries: pbQueries,
 	}, nil
 }
@@ -455,7 +483,18 @@ func protoCheckToTokenCheckV2(input *pb.CheckV2) (*datalog.Check, error) {
 		queries[i] = *q
 	}
 
+	var kind datalog.CheckKind
+	switch input.GetKind() {
+	case pb.CheckV2_One:
+		kind = datalog.CheckKindOne
+	case pb.CheckV2_All:
+		kind = datalog.CheckKindAll
+	default:
+		return nil, errors.New("unsupported check kind")
+	}
+
 	return &datalog.Check{
-		Queries: queries,
+		CheckKind: kind,
+		Queries:   queries,
 	}, nil
 }

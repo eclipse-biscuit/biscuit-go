@@ -4,6 +4,7 @@
 package parser
 
 import (
+	"github.com/biscuit-auth/biscuit-go/v2/datalog"
 	"testing"
 	"time"
 
@@ -99,6 +100,16 @@ func TestGrammarPredicate(t *testing.T) {
 			},
 		},
 		{
+			Input: `right($1, [33, -5])`,
+			Expected: &Predicate{
+				Name: sptr("right"),
+				IDs: []*Term{
+					{Variable: varptr("1")},
+					{Set: []*Term{{Integer: i64ptr(33)}, {NegInt: i64ptr(5)}}},
+				},
+			},
+		},
+		{
 			Input: `right($1, true, false)`,
 			Expected: &Predicate{
 				Name: sptr("right"),
@@ -131,6 +142,46 @@ func TestExprTerm(t *testing.T) {
 			Variable: varptr("0"),
 		},
 	}, parsed)
+}
+
+func TestGrammarTerm(t *testing.T) {
+	parser, err := participle.Build[Term](DefaultParserOptions...)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		Title    string
+		Input    string
+		Expected *Term
+	}{
+		{
+			Title:    "integer",
+			Input:    `33`,
+			Expected: &Term{Integer: i64ptr(33)},
+		},
+		{
+			Title:    "string",
+			Input:    `"abc"`,
+			Expected: &Term{String: sptr("abc")},
+		},
+		{
+			Title:    "Unicode string",
+			Input:    `"Миша"`,
+			Expected: &Term{String: sptr("Миша")},
+		},
+		{
+			Title:    "quoted double quotes",
+			Input:    `"before \" after"`,
+			Expected: &Term{String: sptr("before \" after")},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.Input, func(t *testing.T) {
+			parsed, err := parser.ParseString("test", testCase.Input)
+			require.NoError(t, err)
+			require.Equal(t, testCase.Expected, parsed)
+		})
+	}
 }
 
 func TestGrammarExpression(t *testing.T) {
@@ -174,6 +225,26 @@ func TestGrammarExpression(t *testing.T) {
 			Expected: &biscuit.Expression{
 				biscuit.Value{Term: biscuit.Variable("0")},
 				biscuit.Value{Term: biscuit.Integer(1)},
+				biscuit.BinaryLessThan,
+			},
+		},
+		{
+			Input: `$0 < 1 + 2`,
+			Expected: &biscuit.Expression{
+				biscuit.Value{Term: biscuit.Variable("0")},
+				biscuit.Value{Term: biscuit.Integer(1)},
+				biscuit.Value{Term: biscuit.Integer(2)},
+				biscuit.BinaryAdd,
+				biscuit.BinaryLessThan,
+			},
+		},
+		{
+			Input: `$0 < 1 & 2`,
+			Expected: &biscuit.Expression{
+				biscuit.Value{Term: biscuit.Variable("0")},
+				biscuit.Value{Term: biscuit.Integer(1)},
+				biscuit.Value{Term: biscuit.Integer(2)},
+				biscuit.BinaryBitwiseAnd,
 				biscuit.BinaryLessThan,
 			},
 		},
@@ -239,6 +310,13 @@ func TestGrammarExpression(t *testing.T) {
 				biscuit.Value{Term: biscuit.Variable("0")},
 				biscuit.Value{Term: biscuit.String("^abc[a-z]+$")},
 				biscuit.BinaryRegex,
+			},
+		},
+		{
+			Input: `$0.length() `,
+			Expected: &biscuit.Expression{
+				biscuit.Value{Term: biscuit.Variable("0")},
+				biscuit.UnaryLength,
 			},
 		},
 		{
@@ -315,6 +393,14 @@ func TestGrammarExpression(t *testing.T) {
 			},
 		},
 		{
+			Input: `hex:12ab != hex:ab`,
+			Expected: &biscuit.Expression{
+				biscuit.Value{Term: biscuit.Bytes([]byte{0x12, 0xab})},
+				biscuit.Value{Term: biscuit.Bytes([]byte{0xab})},
+				biscuit.BinaryNotEqual,
+			},
+		},
+		{
 			Input: `{param1} + {param2} * {param3} == {param4} || {param5}`,
 			Params: map[string]biscuit.Term{
 				"param1": biscuit.Integer(1),
@@ -361,6 +447,39 @@ func TestGrammarCheck(t *testing.T) {
 		{
 			Input: `check if parent("a", "b"), parent("b", "c")`,
 			Expected: &Check{
+				CheckKind: CheckKind(datalog.CheckKindOne),
+				Queries: []*CheckQuery{
+					{
+						Body: []*RuleElement{
+							{
+								Predicate: &Predicate{
+
+									Name: sptr("parent"),
+									IDs: []*Term{
+										{String: sptr("a")},
+										{String: sptr("b")},
+									},
+								},
+							},
+							{
+								Predicate: &Predicate{
+
+									Name: sptr("parent"),
+									IDs: []*Term{
+										{String: sptr("b")},
+										{String: sptr("c")},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			Input: `check all parent("a", "b"), parent("b", "c")`,
+			Expected: &Check{
+				CheckKind: CheckKind(datalog.CheckKindAll),
 				Queries: []*CheckQuery{
 					{
 						Body: []*RuleElement{
@@ -392,6 +511,7 @@ func TestGrammarCheck(t *testing.T) {
 		{
 			Input: `check if parent("a", "b"), parent("b", "c")`,
 			Expected: &Check{
+				CheckKind: CheckKind(datalog.CheckKindOne),
 				Queries: []*CheckQuery{
 					{
 						Body: []*RuleElement{
@@ -421,6 +541,7 @@ func TestGrammarCheck(t *testing.T) {
 		{
 			Input: `check if parent("a", "b"), parent("b", "c") or parent("a", "b"), parent("b", "c"), $0 > 42, $1.starts_with("test")`,
 			Expected: &Check{
+				CheckKind: CheckKind(datalog.CheckKindOne),
 				Queries: []*CheckQuery{
 					{
 						Body: []*RuleElement{
@@ -471,10 +592,16 @@ func TestGrammarCheck(t *testing.T) {
 											Left: &Expr3{
 												Left: &Expr4{
 													Left: &Expr5{
-														Expr6: &Expr6{
-															Left: &ExprTerm{
-																Term: &Term{
-																	Variable: varptr("0"),
+														Left: &Expr6{
+															Left: &Expr7{
+																Left: &Expr8{
+																	Expr9: &Expr9{
+																		Left: &ExprTerm{
+																			Term: &Term{
+																				Variable: varptr("0"),
+																			},
+																		},
+																	},
 																},
 															},
 														},
@@ -486,10 +613,16 @@ func TestGrammarCheck(t *testing.T) {
 												Expr3: &Expr3{
 													Left: &Expr4{
 														Left: &Expr5{
-															Expr6: &Expr6{
-																Left: &ExprTerm{
-																	Term: &Term{
-																		Integer: i64ptr(42),
+															Left: &Expr6{
+																Left: &Expr7{
+																	Left: &Expr8{
+																		Expr9: &Expr9{
+																			Left: &ExprTerm{
+																				Term: &Term{
+																					Integer: i64ptr(42),
+																				},
+																			},
+																		},
 																	},
 																},
 															},
@@ -508,25 +641,37 @@ func TestGrammarCheck(t *testing.T) {
 											Left: &Expr3{
 												Left: &Expr4{
 													Left: &Expr5{
-														Expr6: &Expr6{
-															Left: &ExprTerm{
-																Term: &Term{
-																	Variable: varptr("1"),
-																},
-															},
-															Right: []*OpExpr7{
-																{
-																	Operator: OpPrefix,
-																	Expression: &Expression{
-																		Left: &Expr1{
-																			Left: &Expr2{
-																				Left: &Expr3{
-																					Left: &Expr4{
-																						Left: &Expr5{
-																							Expr6: &Expr6{
-																								Left: &ExprTerm{
-																									Term: &Term{
-																										String: sptr("test"),
+														Left: &Expr6{
+															Left: &Expr7{
+																Left: &Expr8{
+																	Expr9: &Expr9{
+																		Left: &ExprTerm{
+																			Term: &Term{
+																				Variable: varptr("1"),
+																			},
+																		},
+																		Right: []*OpExpr10{
+																			{
+																				Operator: OpPrefix,
+																				Expression: &Expression{
+																					Left: &Expr1{
+																						Left: &Expr2{
+																							Left: &Expr3{
+																								Left: &Expr4{
+																									Left: &Expr5{
+																										Left: &Expr6{
+																											Left: &Expr7{
+																												Left: &Expr8{
+																													Expr9: &Expr9{
+																														Left: &ExprTerm{
+																															Term: &Term{
+																																String: sptr("test"),
+																															},
+																														},
+																													},
+																												},
+																											},
+																										},
 																									},
 																								},
 																							},
@@ -557,6 +702,25 @@ func TestGrammarCheck(t *testing.T) {
 			parsed, err := parser.ParseString("test", testCase.Input)
 			require.NoError(t, err)
 			require.Equal(t, testCase.Expected, parsed)
+		})
+	}
+}
+
+func TestGrammarCheckMinimal(t *testing.T) {
+	parser, err := participle.Build[Check](DefaultParserOptions...)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		Input string
+	}{
+		{Input: "check if -922 != 0"},
+		{Input: "check if 100-200 != 0"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.Input, func(t *testing.T) {
+			parsed, err := parser.ParseString("test", testCase.Input)
+			_ = parsed
+			require.NoError(t, err)
 		})
 	}
 }

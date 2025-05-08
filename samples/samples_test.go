@@ -144,13 +144,13 @@ type Validation struct {
 
 func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
 	// all these contain v4 blocks, which are not supported yet
-	if c.Filename == "test024_third_party.bc" ||
-		c.Filename == "test025_check_all.bc" ||
-		c.Filename == "test026_public_keys_interning.bc" ||
-		c.Filename == "test027_integer_wraparound.bc" ||
-		c.Filename == "test028_expressions_v4.bc" {
-		t.SkipNow()
-	}
+	// if c.Filename == "test024_third_party.bc" ||
+	//	c.Filename == "test025_check_all.bc" ||
+	//	c.Filename == "test026_public_keys_interning.bc" ||
+	//	c.Filename == "test027_integer_wraparound.bc" ||
+	//	c.Filename == "test028_expressions_v4.bc" {
+	//	t.SkipNow()
+	// }
 	fmt.Printf("Checking sample %s\n", c.Filename)
 	b, err := os.ReadFile("./data/current/" + c.Filename)
 	require.NoError(t, err)
@@ -164,12 +164,13 @@ func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
 		}
 
 		for _, v := range c.Validations {
-			CompareResult(root_key, c.Filename, *token, v, t)
+			CompareResult(root_key, *token, v, t)
 		}
 
 	} else {
 		fmt.Println(err)
 		fmt.Println("  Parsing failed, all validations must be errors")
+		// TODO: fix this logic, parsing may fail for the "wrong" reason and we should still detect it. See test027.
 		for _, v := range c.Validations {
 			require.Nil(t, v.Result.Ok)
 		}
@@ -185,7 +186,8 @@ func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
 	authority, err := p.Block(blocks[0].Code, nil)
 	require.NoError(t, err)
 	builder := biscuit.NewBuilder(privateRoot)
-	builder.AddBlock(authority)
+	err = builder.AddBlock(authority)
+	require.NoError(t, err)
 	r, err := builder.Build()
 	require.NoError(t, err)
 	rebuilt := *r
@@ -194,7 +196,8 @@ func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
 		parsed, err := p.Block(b.Code, nil)
 		require.NoError(t, err)
 		builder := rebuilt.CreateBlock()
-		builder.AddBlock(parsed)
+		err = builder.AddBlock(parsed)
+		require.NoError(t, err)
 		r, err := rebuilt.Append(rng, builder.Build())
 		require.NoError(t, err)
 		rebuilt = *r
@@ -203,7 +206,7 @@ func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
 	require.Equal(t, sample, rebuilt.Code())
 }
 
-func CompareResult(root_key ed25519.PublicKey, filename string, token biscuit.Biscuit, v Validation, t *testing.T) {
+func CompareResult(root_key ed25519.PublicKey, token biscuit.Biscuit, v Validation, t *testing.T) {
 	p := parser.New()
 	authorizer_code, err := p.Authorizer(v.AuthorizerCode, nil)
 	require.NoError(t, err)
@@ -225,7 +228,9 @@ func CompareResult(root_key ed25519.PublicKey, filename string, token biscuit.Bi
 
 func CompareError(authorization_error error, sample_error *BiscuitError, t *testing.T) {
 	error_string := authorization_error.Error()
-	if sample_error.Format != nil {
+	if sample_error == nil {
+		require.Fail(t, error_string)
+	} else if sample_error.Format != nil {
 		require.Equal(t, error_string, "biscuit: invalid signature")
 	} else if sample_error.FailedLogic != nil {
 		if sample_error.FailedLogic.Unauthorized != nil {
