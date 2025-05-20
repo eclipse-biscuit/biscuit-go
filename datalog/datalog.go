@@ -203,19 +203,16 @@ func (e InvalidRuleError) Error() string {
 }
 
 func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error {
-	// extract all variables from the rule body
-	variables := make(MatchedVariables)
-	for _, predicate := range r.Body {
-		for _, term := range predicate.Terms {
-			v, ok := term.(Variable)
-			if !ok {
-				continue
-			}
-			variables[v] = nil
-		}
-	}
+	return r.ApplyExtended(facts, newFacts, syms, CheckKindOne)
+}
 
-	combinations := combine(variables, r.Body, r.Expressions, facts, syms)
+func (r Rule) ApplyExtended(facts *FactSet, newFacts *FactSet, syms *SymbolTable, kind CheckKind) error {
+	// extract all variables from the rule body
+	variables := r.collectVariables()
+
+	matchAllExpr := kind == CheckKindAll
+
+	combinations := combine(variables, r.Body, r.Expressions, facts, syms, matchAllExpr)
 
 	for res := range combinations {
 		if res.error != nil {
@@ -241,8 +238,30 @@ func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error 
 	return nil
 }
 
+func (r Rule) collectVariables() MatchedVariables {
+	variables := make(MatchedVariables)
+	for _, predicate := range r.Body {
+		for _, term := range predicate.Terms {
+			v, ok := term.(Variable)
+			if !ok {
+				continue
+			}
+			variables[v] = nil
+		}
+	}
+	return variables
+}
+
+type CheckKind byte
+
+const (
+	CheckKindOne CheckKind = iota
+	CheckKindAll
+)
+
 type Check struct {
-	Queries []Rule
+	CheckKind CheckKind
+	Queries   []Rule
 }
 
 type FactSet []Fact
@@ -446,8 +465,15 @@ func (w *World) Query(pred Predicate) *FactSet {
 }
 
 func (w *World) QueryRule(rule Rule, syms *SymbolTable) *FactSet {
+	return w.QueryRuleExtended(rule, syms, CheckKindOne)
+}
+
+func (w *World) QueryRuleExtended(rule Rule, syms *SymbolTable, kind CheckKind) *FactSet {
 	newFacts := &FactSet{}
-	rule.Apply(w.facts, newFacts, syms)
+	err := rule.ApplyExtended(w.facts, newFacts, syms, kind)
+	if err != nil { // TODO: this check was missing from mainline code.
+		return &FactSet{}
+	}
 	return newFacts
 }
 
@@ -489,7 +515,7 @@ func (m MatchedVariables) Clone() MatchedVariables {
 	return res
 }
 
-func combine(variables MatchedVariables, predicates []Predicate, expressions []Expression, facts *FactSet, syms *SymbolTable) <-chan struct {
+func combine(variables MatchedVariables, predicates []Predicate, expressions []Expression, facts *FactSet, syms *SymbolTable, matchAllExpr bool) <-chan struct {
 	MatchedVariables
 	error
 } {
@@ -580,8 +606,17 @@ func combine(variables MatchedVariables, predicates []Predicate, expressions []E
 							return
 						}
 						if !res.Equal(Bool(true)) {
-							valid = false
-							break
+							if !matchAllExpr {
+								valid = false
+								break
+							} else {
+								c <- struct {
+									MatchedVariables
+									error
+								}{complete_vars, fmt.Errorf("one or more expressions failed to match")}
+
+								return
+							}
 						}
 					}
 

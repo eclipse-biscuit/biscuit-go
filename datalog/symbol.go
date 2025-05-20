@@ -132,12 +132,12 @@ func (t *SymbolTable) SplitOff(at int) *SymbolTable {
 		panic("split index out of bound")
 	}
 
-	new := make(SymbolTable, len(*t)-at)
-	copy(new, (*t)[at:])
+	newSlice := make(SymbolTable, len(*t)-at)
+	copy(newSlice, (*t)[at:])
 
 	*t = (*t)[:at]
 
-	return &new
+	return &newSlice
 }
 
 func (t *SymbolTable) Len() int {
@@ -181,6 +181,16 @@ func (d SymbolDebugger) Predicate(p Predicate) string {
 			s = "\"" + d.Str(sym) + "\""
 		} else if variable, ok := id.(Variable); ok {
 			s = "$" + d.Var(variable)
+		} else if set, ok := id.(Set); ok {
+			mbrs := make([]string, len(set))
+			for j, mbr := range set {
+				if sym, ok := mbr.(String); ok {
+					mbrs[j] = "\"" + d.Str(sym) + "\""
+				} else {
+					mbrs[j] = fmt.Sprintf("%v", mbr)
+				}
+			}
+			s = "[" + strings.Join(mbrs, ", ") + "]"
 		} else {
 			s = fmt.Sprintf("%v", id)
 		}
@@ -235,7 +245,16 @@ func (d SymbolDebugger) Check(c Check) string {
 	for i, q := range c.Queries {
 		queries[i] = d.CheckQuery(q)
 	}
-	return fmt.Sprintf("check if %s", strings.Join(queries, " or "))
+	var formatStr string
+	switch c.CheckKind {
+	case CheckKindOne:
+		formatStr = "check if %s"
+	case CheckKindAll:
+		formatStr = "check all %s"
+	default:
+		formatStr = "Error: unknown check %s"
+	}
+	return fmt.Sprintf(formatStr, strings.Join(queries, " or "))
 }
 
 func (d SymbolDebugger) World(w *World) string {

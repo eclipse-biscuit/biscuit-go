@@ -60,6 +60,19 @@ func TestUnaryParens(t *testing.T) {
 	require.Equal(t, Integer(9), res)
 }
 
+func TestUnaryLength(t *testing.T) {
+	syms := &SymbolTable{}
+
+	ops := Expression{
+		Value{syms.Insert("Саша")},
+		UnaryOp{Length{}},
+	}
+
+	res, err := ops.Evaluate(nil, syms)
+	require.NoError(t, err)
+	require.Equal(t, Integer(8), res) // this is the number of bytes (the specification is vague on this point)
+}
+
 func TestBinaryLessThan(t *testing.T) {
 	require.Equal(t, BinaryLessThan, LessThan{}.Type())
 	syms := &SymbolTable{}
@@ -428,8 +441,9 @@ func TestBinaryGreaterOrEqual(t *testing.T) {
 	}
 }
 
-func TestBinaryEqual(t *testing.T) {
+func TestBinaryEqualNotEqual(t *testing.T) {
 	require.Equal(t, BinaryEqual, Equal{}.Type())
+	require.Equal(t, BinaryNotEqual, NotEqual{}.Type())
 	syms := &SymbolTable{}
 
 	testCases := []struct {
@@ -491,18 +505,28 @@ func TestBinaryEqual(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			ops := Expression{
+			ops1 := Expression{
 				Value{tc.left},
 				Value{tc.right},
 				BinaryOp{Equal{}},
 			}
 
-			res, err := ops.Evaluate(nil, syms)
+			ops2 := Expression{
+				Value{tc.left},
+				Value{tc.right},
+				BinaryOp{NotEqual{}},
+			}
+
+			res1, err1 := ops1.Evaluate(nil, syms)
+			res2, err2 := ops2.Evaluate(nil, syms)
 			if tc.expectedErr {
-				require.Error(t, err)
+				require.Error(t, err1)
+				require.Error(t, err2)
 			} else {
-				require.NoError(t, err)
-				require.Equal(t, tc.res, res)
+				require.NoError(t, err1)
+				require.NoError(t, err2)
+				require.Equal(t, tc.res, res1)
+				require.Equal(t, !tc.res, res2)
 			}
 		})
 	}
@@ -523,6 +547,12 @@ func TestBinaryContains(t *testing.T) {
 			name:  "integer in set",
 			left:  Set{Integer(1), Integer(2), Integer(3)},
 			right: Integer(1),
+			want:  Bool(true),
+		},
+		{
+			name:  "integer in set, negative",
+			left:  Set{Integer(1), Integer(2), Integer(-3)},
+			right: Integer(-3),
 			want:  Bool(true),
 		},
 		{
@@ -1192,6 +1222,204 @@ func TestBinaryOr(t *testing.T) {
 	}
 }
 
+func TestBinaryBitwiseAnd(t *testing.T) {
+	require.Equal(t, BinaryBitwiseAnd, BitwiseAnd{}.Type())
+	syms := &SymbolTable{}
+
+	testCases := []struct {
+		desc            string
+		left            Term
+		right           Term
+		res             Term
+		expectedErr     bool
+		expectedErrType error
+	}{
+		{
+			desc:  "normal and",
+			left:  Integer(5),
+			right: Integer(3),
+			res:   Integer(1),
+		},
+		{
+			desc:  "16 bit and",
+			left:  Integer(65535),
+			right: Integer(77),
+			res:   Integer(77),
+		},
+		{
+			desc:  "negative 64-bit",
+			left:  Integer(-1),
+			right: Integer(77),
+			res:   Integer(77),
+		},
+		{
+			desc:        "invalid left type",
+			left:        syms.Insert("abc"),
+			right:       Integer(-3),
+			expectedErr: true,
+		},
+		{
+			desc:        "invalid right type",
+			left:        Integer(-3),
+			right:       syms.Insert("abc"),
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			ops := Expression{
+				Value{tc.left},
+				Value{tc.right},
+				BinaryOp{BitwiseAnd{}},
+			}
+
+			res, err := ops.Evaluate(nil, syms)
+			if tc.expectedErr {
+				if tc.expectedErrType != nil {
+					require.Equal(t, tc.expectedErrType, errors.Unwrap(err))
+				} else {
+					require.Error(t, err)
+				}
+			} else {
+				require.Equal(t, tc.res, res)
+			}
+		})
+	}
+}
+
+func TestBinaryBitwiseOr(t *testing.T) {
+	require.Equal(t, BinaryBitwiseOr, BitwiseOr{}.Type())
+	syms := &SymbolTable{}
+
+	testCases := []struct {
+		desc            string
+		left            Term
+		right           Term
+		res             Term
+		expectedErr     bool
+		expectedErrType error
+	}{
+		{
+			desc:  "normal or",
+			left:  Integer(5),
+			right: Integer(3),
+			res:   Integer(7),
+		},
+		{
+			desc:  "16 bit or",
+			left:  Integer(65535),
+			right: Integer(77),
+			res:   Integer(65535),
+		},
+		{
+			desc:  "negative 64-bit",
+			left:  Integer(-1),
+			right: Integer(77),
+			res:   Integer(-1),
+		},
+		{
+			desc:        "invalid left type",
+			left:        syms.Insert("abc"),
+			right:       Integer(-3),
+			expectedErr: true,
+		},
+		{
+			desc:        "invalid right type",
+			left:        Integer(-3),
+			right:       syms.Insert("abc"),
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			ops := Expression{
+				Value{tc.left},
+				Value{tc.right},
+				BinaryOp{BitwiseOr{}},
+			}
+
+			res, err := ops.Evaluate(nil, syms)
+			if tc.expectedErr {
+				if tc.expectedErrType != nil {
+					require.Equal(t, tc.expectedErrType, errors.Unwrap(err))
+				} else {
+					require.Error(t, err)
+				}
+			} else {
+				require.Equal(t, tc.res, res)
+			}
+		})
+	}
+}
+
+func TestBinaryBitwiseXor(t *testing.T) {
+	require.Equal(t, BinaryBitwiseXor, BitwiseXor{}.Type())
+	syms := &SymbolTable{}
+
+	testCases := []struct {
+		desc            string
+		left            Term
+		right           Term
+		res             Term
+		expectedErr     bool
+		expectedErrType error
+	}{
+		{
+			desc:  "normal xor",
+			left:  Integer(5),
+			right: Integer(3),
+			res:   Integer(6),
+		},
+		{
+			desc:  "16 bit xor",
+			left:  Integer(0xffff),
+			right: Integer(0x004d),
+			res:   Integer(0xffb2),
+		},
+		{
+			desc:  "negative 64-bit",
+			left:  Integer(-1),
+			right: Integer(0x004d),
+			res:   Integer(-78),
+		},
+		{
+			desc:        "invalid left type",
+			left:        syms.Insert("abc"),
+			right:       Integer(-3),
+			expectedErr: true,
+		},
+		{
+			desc:        "invalid right type",
+			left:        Integer(-3),
+			right:       syms.Insert("abc"),
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			ops := Expression{
+				Value{tc.left},
+				Value{tc.right},
+				BinaryOp{BitwiseXor{}},
+			}
+
+			res, err := ops.Evaluate(nil, syms)
+			if tc.expectedErr {
+				if tc.expectedErrType != nil {
+					require.Equal(t, tc.expectedErrType, errors.Unwrap(err))
+				} else {
+					require.Error(t, err)
+				}
+			} else {
+				require.Equal(t, tc.res, res)
+			}
+		})
+	}
+}
+
 func TestPrint(t *testing.T) {
 	syms := SymbolTable{}
 	syms.Insert("abc")
@@ -1219,6 +1447,11 @@ func TestPrint(t *testing.T) {
 			desc: "binary",
 			expr: Expression{Value{Integer(9)}, Value{Integer(4)}, BinaryOp{Mul{}}},
 			res:  "9 * 4",
+		},
+		{
+			desc: "bitwise",
+			expr: Expression{Value{Integer(9)}, Value{Integer(4)}, BinaryOp{BitwiseXor{}}},
+			res:  "9 ^ 4",
 		},
 		{
 			desc: "parens",

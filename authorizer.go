@@ -117,7 +117,7 @@ func (v *authorizer) AddPolicy(policy Policy) {
 func (v *authorizer) Authorize() error {
 	// if we load facts from the verifier before
 	// the token's fact and rules, we might get inconsistent symbols
-	// token ements should first be converted to builder elements
+	// token elements should first be converted to builder elements
 	// with the token's symbol table, then converted back
 	// with the verifier's symbol table
 	for _, fact := range *v.biscuit.authority.facts {
@@ -144,21 +144,7 @@ func (v *authorizer) Authorize() error {
 	var errs []error
 
 	for i, check := range v.checks {
-		c := check.convert(v.symbols)
-		successful := false
-		for _, query := range c.Queries {
-			res := v.world.QueryRule(query, v.symbols)
-			if len(*res) != 0 {
-				successful = true
-				break
-			}
-		}
-		if !successful {
-			debug := datalog.SymbolDebugger{
-				SymbolTable: v.symbols,
-			}
-			errs = append(errs, fmt.Errorf("failed to verify check #%d: %s", i, debug.Check(c)))
-		}
+		errs = v.applyCheck(&check, errs, v.world, "authorizer", i)
 	}
 
 	for i, check := range v.biscuit.authority.checks {
@@ -166,22 +152,7 @@ func (v *authorizer) Authorize() error {
 		if err != nil {
 			return fmt.Errorf("biscuit: verification failed: %s", err)
 		}
-		c := ch.convert(v.symbols)
-
-		successful := false
-		for _, query := range c.Queries {
-			res := v.world.QueryRule(query, v.symbols)
-			if len(*res) != 0 {
-				successful = true
-				break
-			}
-		}
-		if !successful {
-			debug := datalog.SymbolDebugger{
-				SymbolTable: v.symbols,
-			}
-			errs = append(errs, fmt.Errorf("failed to verify block 0 check #%d: %s", i, debug.Check(c)))
-		}
+		errs = v.applyCheck(ch, errs, v.world, "block 0", i)
 	}
 
 	policyMatched := false
@@ -206,7 +177,7 @@ func (v *authorizer) Authorize() error {
 		}
 	}
 
-	// remove the rules from the vrifier and authority blocks
+	// remove the rules from the verifier and authority blocks
 	// so they are not affected by facts created by later blocks
 	v.world.ResetRules()
 
@@ -238,23 +209,7 @@ func (v *authorizer) Authorize() error {
 			if err != nil {
 				return fmt.Errorf("biscuit: verification failed: %s", err)
 			}
-			c := ch.convert(v.symbols)
-
-			successful := false
-			for _, query := range c.Queries {
-				res := block_world.QueryRule(query, v.symbols)
-
-				if len(*res) != 0 {
-					successful = true
-					break
-				}
-			}
-			if !successful {
-				debug := datalog.SymbolDebugger{
-					SymbolTable: v.symbols,
-				}
-				errs = append(errs, fmt.Errorf("failed to verify block #%d check #%d: %s", i+1, j, debug.Check(c)))
-			}
+			errs = v.applyCheck(ch, errs, block_world, fmt.Sprintf("block %d", i+1), j)
 		}
 
 		block_world.ResetRules()
@@ -278,6 +233,31 @@ func (v *authorizer) Authorize() error {
 	} else {
 		return ErrNoMatchingPolicy
 	}
+}
+
+func (v *authorizer) applyCheck(ch *Check, errs []error, world *datalog.World, block string, idx int) []error {
+	c := ch.convert(v.symbols)
+
+	successful := false
+	for _, query := range c.Queries {
+		res := world.QueryRuleExtended(query, v.symbols, c.CheckKind)
+		if len(*res) != 0 {
+			successful = true
+			debug := datalog.SymbolDebugger{SymbolTable: v.symbols}
+			querystr := debug.CheckQuery(query)
+			_ = querystr
+			resstr := debug.FactSet(res)
+			_ = resstr
+			break
+		}
+	}
+	if !successful {
+		debug := datalog.SymbolDebugger{
+			SymbolTable: v.symbols,
+		}
+		errs = append(errs, fmt.Errorf("failed to verify block %s check #%d: %s", block, idx, debug.Check(c)))
+	}
+	return errs
 }
 
 func (v *authorizer) Query(rule Rule) (FactSet, error) {
@@ -331,7 +311,7 @@ func (v *authorizer) LoadPolicies(authorizerPolicies []byte) error {
 	}
 
 	switch pbPolicies.GetVersion() {
-	case 3:
+	case 3, 4:
 		return v.loadPoliciesV2(pbPolicies)
 	default:
 		return fmt.Errorf("verifier: unsupported policies version %d", pbPolicies.GetVersion())
