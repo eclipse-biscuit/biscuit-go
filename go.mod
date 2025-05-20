@@ -1,11 +1,11 @@
 module github.com/biscuit-auth/biscuit-go/v2
 
-go 1.19
+go 1.22
 
 require (
 	github.com/alecthomas/participle/v2 v2.1.4
 	github.com/stretchr/testify v1.10.0
-	google.golang.org/protobuf v1.34.2
+	google.golang.org/protobuf v1.36.6
 )
 
 require (
