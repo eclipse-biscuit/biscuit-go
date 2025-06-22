@@ -381,19 +381,25 @@ func TestResource(t *testing.T) {
 
 func TestSymbolTable(t *testing.T) {
 	s1 := new(SymbolTable)
-	s2 := &SymbolTable{"a", "b", "c"}
-	s3 := &SymbolTable{"d", "e", "f"}
+	s2 := &SymbolTable{
+		Symbols: []string{"a", "b", "c"},
+	}
+	s3 := &SymbolTable{
+		Symbols: []string{"d", "e", "f"},
+	}
 
 	require.True(t, s1.IsDisjoint(s2))
 	s1.Extend(s2)
 	require.False(t, s1.IsDisjoint(s2))
 	require.Equal(t, s2, s1)
 	s1.Extend(s3)
-	require.Equal(t, SymbolTable(append(*s2, *s3...)), *s1)
+	require.Equal(t, SymbolTable{
+		Symbols: append(s2.Symbols, s3.Symbols...),
+	}, *s1)
 
-	require.Equal(t, len(*s2)+len(*s3), s1.Len())
+	require.Equal(t, len(s2.Symbols)+len(s3.Symbols), s1.Len())
 
-	new := s1.SplitOff(len(*s2))
+	new := s1.SplitOff(len(s2.Symbols))
 	require.Equal(t, s3, new)
 	require.Equal(t, s2, s1)
 }
@@ -404,12 +410,16 @@ func TestSymbolTableInsertAndSym(t *testing.T) {
 	require.Equal(t, String(1025), s.Insert("b"))
 	require.Equal(t, String(1026), s.Insert("c"))
 
-	require.Equal(t, &SymbolTable{"a", "b", "c"}, s)
+	require.Equal(t, &SymbolTable{
+		Symbols: []string{"a", "b", "c"},
+	}, s)
 
 	require.Equal(t, String(1024), s.Insert("a"))
 	require.Equal(t, String(1027), s.Insert("d"))
 
-	require.Equal(t, &SymbolTable{"a", "b", "c", "d"}, s)
+	require.Equal(t, &SymbolTable{
+		Symbols: []string{"a", "b", "c", "d"},
+	}, s)
 
 	require.Equal(t, String(1024), s.Sym("a"))
 	require.Equal(t, String(1025), s.Sym("b"))
@@ -430,8 +440,12 @@ func TestSymbolTableClone(t *testing.T) {
 	s2.Insert("d")
 	s2.Insert("e")
 
-	require.Equal(t, &SymbolTable{"a", "b", "c"}, s)
-	require.Equal(t, &SymbolTable{"a", "b", "c", "d", "e"}, s2)
+	require.Equal(t, &SymbolTable{
+		Symbols: []string{"a", "b", "c"},
+	}, s)
+	require.Equal(t, &SymbolTable{
+		Symbols: []string{"a", "b", "c", "d", "e"},
+	}, s2)
 }
 
 func TestSetEqual(t *testing.T) {

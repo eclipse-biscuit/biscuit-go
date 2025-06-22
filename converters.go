@@ -13,7 +13,7 @@ import (
 
 func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 	out := &pb.Block{
-		Symbols: *input.symbols,
+		Symbols: input.symbols.Symbols,
 		Context: proto.String(input.context),
 		Version: proto.Uint32(input.version),
 	}
@@ -58,7 +58,7 @@ func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 }
 
 func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
-	symbols := datalog.SymbolTable(input.Symbols)
+	symbols := datalog.SymbolTable{Symbols: input.Symbols}
 
 	var facts datalog.FactSet
 	var rules []datalog.Rule

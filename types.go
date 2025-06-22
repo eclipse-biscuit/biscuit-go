@@ -193,6 +193,7 @@ type Rule struct {
 	Head        Predicate
 	Body        []Predicate
 	Expressions []Expression
+	Scopes      []Scope
 }
 
 func (r Rule) convert(symbols *datalog.SymbolTable) datalog.Rule {
@@ -621,3 +622,85 @@ type Policy struct {
 	Queries []Rule
 	Kind    PolicyKind
 }
+
+type ScopeType byte
+
+const (
+	ScopeTypeAuthority ScopeType = iota
+	ScopeTypePrevious
+	ScopeTypePublicKey
+	ScopeTypeParameter
+)
+
+type Scope interface {
+	Type() ScopeType
+	convert(symbols *datalog.SymbolTable) datalog.Scope
+}
+
+type AuthorityScope struct{}
+
+func (AuthorityScope) Type() ScopeType {
+	return ScopeTypeAuthority
+}
+
+func (AuthorityScope) convert(symbols *datalog.SymbolTable) datalog.Scope {
+	return datalog.AuthorityScope{}
+}
+
+type PreviousScope struct{}
+
+func (PreviousScope) Type() ScopeType {
+	return ScopeTypePrevious
+}
+
+func (PreviousScope) convert(symbols *datalog.SymbolTable) datalog.Scope {
+	return datalog.PreviousScope{}
+}
+
+/*
+type PublicKeyScope struct {
+	publicKey ed25519.PublicKey
+}
+
+func (PublicKeyScope) Type() ScopeType {
+	return ScopeTypePublicKey
+}
+
+func (s PublicKeyScope) convert(symbols *datalog.SymbolTable) datalog.Scope {
+	return datalog.PublicKeyScope{ID: symbols.InsertPublicKey(s.publicKey)}
+}
+
+type ParameterScope struct {
+	parameter string
+}
+
+func (ParameterScope) Type() ScopeType {
+	return ScopeTypeParameter
+}
+
+func (s Scope) convert(symbols *datalog.SymbolTable) datalog.Scope {
+	queries := make([]datalog.Rule, len(c.Queries))
+	for i, q := range c.Queries {
+		queries[i] = q.convert(symbols)
+	}
+
+	return datalog.Check{
+		Queries: queries,
+	}
+}
+*/
+/*
+func fromDatalogScope(symbols *datalog.SymbolTable, dlScope datalog.Scope) (*Scope, error) {
+	queries := make([]Rule, len(dlCheck.Queries))
+	for i, q := range dlCheck.Queries {
+		query, err := fromDatalogRule(symbols, q)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert datalog check query: %w", err)
+		}
+		queries[i] = *query
+	}
+
+	return &Check{
+		Queries: queries,
+	}, nil
+}*/

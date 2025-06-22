@@ -351,6 +351,7 @@ func (b *Biscuit) authorizerFor(root ed25519.PublicKey, opts ...AuthorizerOption
 	}
 
 	currentKey = b.container.Authority.NextKey.Key
+	currentAlgorithm := b.container.Authority.NextKey.Algorithm
 	if len(currentKey) != 32 {
 		return nil, ErrInvalidKeySize
 	}
@@ -369,7 +370,26 @@ func (b *Biscuit) authorizerFor(root ed25519.PublicKey, opts ...AuthorizerOption
 			return nil, ErrInvalidSignature
 		}
 
+		if block.ExternalSignature != nil {
+			// an external signature is present, we need to verify it
+			if *block.ExternalSignature.PublicKey.Algorithm != pb.PublicKey_Ed25519 {
+				return nil, UnsupportedAlgorithm
+			}
+
+			// the public key that's part of the signed block is the public key used to sign
+			// the previous block
+			algorithm := make([]byte, 4)
+			binary.LittleEndian.PutUint32(algorithm[0:], uint32(currentAlgorithm.Number()))
+			toVerify := append(block.Block[:], algorithm...)
+			toVerify = append(toVerify, currentKey[:]...)
+
+			if ok := ed25519.Verify(block.ExternalSignature.PublicKey.Key, toVerify, block.ExternalSignature.Signature); !ok {
+				return nil, ErrInvalidSignature
+			}
+		}
+
 		currentKey = block.NextKey.Key
+		currentAlgorithm = block.NextKey.Algorithm
 		if len(currentKey) != 32 {
 			return nil, ErrInvalidKeySize
 		}
