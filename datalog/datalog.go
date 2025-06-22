@@ -191,6 +191,7 @@ type Rule struct {
 	Head        Predicate
 	Body        []Predicate
 	Expressions []Expression
+	Scopes      []Scope
 }
 
 type InvalidRuleError struct {
