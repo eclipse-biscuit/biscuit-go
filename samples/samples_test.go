@@ -144,11 +144,21 @@ type Validation struct {
 
 func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
 	// all these contain v4 blocks, which are not supported yet
-	if c.Filename == "test024_third_party.bc" ||
-		c.Filename == "test025_check_all.bc" ||
-		c.Filename == "test026_public_keys_interning.bc" ||
+	if //c.Filename == "test024_third_party.bc" ||
+	c.Filename == "test025_check_all.bc" ||
+		//c.Filename == "test026_public_keys_interning.bc" ||
 		c.Filename == "test027_integer_wraparound.bc" ||
-		c.Filename == "test028_expressions_v4.bc" {
+		c.Filename == "test028_expressions_v4.bc" ||
+		c.Filename == "test029_reject_if.bc" ||
+		c.Filename == "test030_null.bc" ||
+		c.Filename == "test031_heterogeneous_equal.bc" ||
+		c.Filename == "test032_laziness_closures.bc" ||
+		c.Filename == "test033_typeof.bc" ||
+		c.Filename == "test034_array_map.bc" ||
+		c.Filename == "test035_ffi.bc" ||
+		c.Filename == "test036_secp256r1.bc" ||
+		c.Filename == "test037_secp256r1_third_party.bc" ||
+		c.Filename == "test038_try_op.bc" {
 		t.SkipNow()
 	}
 	fmt.Printf("Checking sample %s\n", c.Filename)
