@@ -89,6 +89,14 @@ type SecretTokenNext struct {
 	Key PrivateKey
 }
 
+func (t *SecretTokenNext) Type() TokenNextType {
+	return TokenNextTypeSecret
+}
+
 type SealTokenNext struct {
 	Signature []byte
+}
+
+func (t *SealTokenNext) Type() TokenNextType {
+	return TokenNextTypeSeal
 }

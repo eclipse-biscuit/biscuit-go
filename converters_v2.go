@@ -459,3 +459,25 @@ func protoCheckToTokenCheckV2(input *pb.CheckV2) (*datalog.Check, error) {
 		Queries: queries,
 	}, nil
 }
+
+func protoPublicKeyToTokenPublicKeyV2(input *pb.PublicKey) (PublicKey, error) {
+	switch *input.Algorithm {
+	case pb.PublicKey_Ed25519:
+		if len(input.Key) != 32 {
+			return nil, ErrInvalidKeySize
+		}
+		return &Ed25519PublicKey{Key: input.Key}, nil
+	default:
+		return nil, fmt.Errorf("biscuit: unsupported public key algorithm: %v", input.Algorithm)
+	}
+}
+
+func tokenPublicKeyToProtoPublicKeyV2(input PublicKey) (*pb.PublicKey, error) {
+	switch input.Algorithm() {
+	case AlgorithmEd25519:
+		algorithm := pb.PublicKey_Ed25519
+		return &pb.PublicKey{Algorithm: &algorithm, Key: input.Serialize()}, nil
+	default:
+		return nil, fmt.Errorf("biscuit: unsupported public key algorithm: %v", input.Algorithm())
+	}
+}
