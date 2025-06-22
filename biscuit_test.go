@@ -378,18 +378,20 @@ func TestGenerateWorld(t *testing.T) {
 	b2, err := b.Append(rng, blockBuild.Build())
 	require.NoError(t, err)
 
-	allStrings := append(*StringTable, *(blockBuild.(*blockBuilder)).symbols...)
-	world, err = b2.generateWorld(&allStrings)
+	blockSymbols := (blockBuild.(*blockBuilder)).symbols
+	allStrings := StringTable.Clone()
+	allStrings.Extend(blockSymbols)
+	world, err = b2.generateWorld(allStrings)
 	require.NoError(t, err)
 
 	expectedWorld = datalog.NewWorld()
-	expectedWorld.AddFact(authorityFact1.convert(&allStrings))
-	expectedWorld.AddFact(authorityFact2.convert(&allStrings))
-	expectedWorld.AddFact(blockFact.convert(&allStrings))
-	expectedWorld.AddRule(authorityRule1.convert(&allStrings))
-	expectedWorld.AddRule(authorityRule2.convert(&allStrings))
+	expectedWorld.AddFact(authorityFact1.convert(allStrings))
+	expectedWorld.AddFact(authorityFact2.convert(allStrings))
+	expectedWorld.AddFact(blockFact.convert(allStrings))
+	expectedWorld.AddRule(authorityRule1.convert(allStrings))
+	expectedWorld.AddRule(authorityRule2.convert(allStrings))
 	expectedWorld.AddRule(
-		blockRule.convert(&allStrings),
+		blockRule.convert(allStrings),
 	)
 	require.Equal(t, expectedWorld, world)
 }
@@ -407,7 +409,7 @@ func TestAppendErrors(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = b.Append(rng, &Block{
-			symbols: &datalog.SymbolTable{"newfact"},
+			symbols: &datalog.SymbolTable{Symbols: []string{"newfact"}},
 		})
 		require.Equal(t, ErrSymbolTableOverlap, err)
 	})
@@ -435,8 +437,8 @@ func TestNewErrors(t *testing.T) {
 
 	t.Run("authority block Strings overlap", func(t *testing.T) {
 		_, privateRoot, _ := ed25519.GenerateKey(rng)
-		_, err := New(rng, privateRoot, &datalog.SymbolTable{"String1", "String2"}, &Block{
-			symbols: &datalog.SymbolTable{"String1"},
+		_, err := New(rng, privateRoot, &datalog.SymbolTable{Symbols: []string{"String1", "String2"}}, &Block{
+			symbols: &datalog.SymbolTable{Symbols: []string{"String1"}},
 		})
 		require.Equal(t, ErrSymbolTableOverlap, err)
 	})

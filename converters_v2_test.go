@@ -724,7 +724,7 @@ func TestBlockConvertV2(t *testing.T) {
 	}
 
 	in := &Block{
-		symbols: &datalog.SymbolTable{"a", "b", "c", "d"},
+		symbols: &datalog.SymbolTable{Symbols: []string{"a", "b", "c", "d"}},
 		facts:   &datalog.FactSet{datalog.Fact{Predicate: predicate}},
 		rules:   []datalog.Rule{*rule},
 		checks:  []datalog.Check{{Queries: []datalog.Rule{*rule}}},

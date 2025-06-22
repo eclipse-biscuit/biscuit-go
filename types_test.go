@@ -14,7 +14,7 @@ import (
 func TestFromDatalogFact(t *testing.T) {
 	now := time.Now()
 
-	symbolTable := &datalog.SymbolTable{"sym0", "sym1", "var1"}
+	symbolTable := &datalog.SymbolTable{Symbols: []string{"sym0", "sym1", "var1"}}
 	dlFact := datalog.Fact{
 		Predicate: datalog.Predicate{
 			Name: datalog.String(datalog.OFFSET + 0),

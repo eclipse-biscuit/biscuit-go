@@ -339,7 +339,9 @@ func (v *authorizer) LoadPolicies(authorizerPolicies []byte) error {
 }
 
 func (v *authorizer) loadPoliciesV2(pbPolicies *pb.AuthorizerPolicies) error {
-	policySymbolTable := datalog.SymbolTable(pbPolicies.Symbols)
+	policySymbolTable := datalog.SymbolTable{
+		Symbols: pbPolicies.Symbols,
+	}
 	v.symbols = v.baseSymbols.Clone()
 	v.symbols.Extend(&policySymbolTable)
 
@@ -463,7 +465,7 @@ func (v *authorizer) SerializePolicies() ([]byte, error) {
 
 	version := MaxSchemaVersion
 	return proto.Marshal(&pb.AuthorizerPolicies{
-		Symbols:  *v.symbols.Clone(),
+		Symbols:  v.symbols.Clone().Symbols,
 		Version:  proto.Uint32(version),
 		Facts:    protoFacts,
 		Rules:    protoRules,
