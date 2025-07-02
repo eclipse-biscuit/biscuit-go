@@ -2,6 +2,7 @@ package biscuit
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 
@@ -599,7 +600,7 @@ func (b *Biscuit) checkRootKey(root ed25519.PublicKey) error {
 	return nil
 }*/
 
-func (b *Biscuit) generateWorld(symbols *datalog.SymbolTable) (*datalog.World, error) {
+func (b *Biscuit) generateWorld(ctx context.Context, symbols *datalog.SymbolTable) (*datalog.World, error) {
 	world := datalog.NewWorld()
 
 	for _, fact := range *b.authority.facts {
@@ -620,7 +621,7 @@ func (b *Biscuit) generateWorld(symbols *datalog.SymbolTable) (*datalog.World, e
 		}
 	}
 
-	if err := world.Run(symbols); err != nil {
+	if err := world.Run(ctx, symbols); err != nil {
 		return nil, err
 	}
 

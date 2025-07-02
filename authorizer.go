@@ -1,6 +1,7 @@
 package biscuit
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,8 +24,8 @@ type Authorizer interface {
 	AddRule(rule Rule)
 	AddCheck(check Check)
 	AddPolicy(policy Policy)
-	Authorize() error
-	Query(rule Rule) (FactSet, error)
+	Authorize(ctx context.Context) error
+	Query(ctx context.Context, rule Rule) (FactSet, error)
 	Biscuit() *Biscuit
 	Reset()
 	PrintWorld() string
@@ -111,7 +112,7 @@ func (v *authorizer) AddPolicy(policy Policy) {
 	v.policies = append(v.policies, policy)
 }
 
-func (v *authorizer) Authorize() error {
+func (v *authorizer) Authorize(ctx context.Context) error {
 	// if we load facts from the verifier before
 	// the token's fact and rules, we might get inconsistent symbols
 	// token ements should first be converted to builder elements
@@ -133,7 +134,7 @@ func (v *authorizer) Authorize() error {
 		v.world.AddRule(r.convert(v.symbols))
 	}
 
-	if err := v.world.Run(v.symbols); err != nil {
+	if err := v.world.Run(ctx, v.symbols); err != nil {
 		return err
 	}
 	v.dirty = true
@@ -226,7 +227,7 @@ func (v *authorizer) Authorize() error {
 			block_world.AddRule(r.convert(v.symbols))
 		}
 
-		if err := block_world.Run(v.symbols); err != nil {
+		if err := block_world.Run(ctx, v.symbols); err != nil {
 			return err
 		}
 
@@ -277,8 +278,8 @@ func (v *authorizer) Authorize() error {
 	}
 }
 
-func (v *authorizer) Query(rule Rule) (FactSet, error) {
-	if err := v.world.Run(v.symbols); err != nil {
+func (v *authorizer) Query(ctx context.Context, rule Rule) (FactSet, error) {
+	if err := v.world.Run(ctx, v.symbols); err != nil {
 		return nil, err
 	}
 	v.dirty = true

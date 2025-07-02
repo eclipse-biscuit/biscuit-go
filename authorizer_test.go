@@ -1,6 +1,7 @@
 package biscuit
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"testing"
@@ -9,6 +10,7 @@ import (
 )
 
 func TestVerifierDefaultPolicy(t *testing.T) {
+	ctx := context.Background()
 	rng := rand.Reader
 	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
 
@@ -29,15 +31,16 @@ func TestVerifierDefaultPolicy(t *testing.T) {
 	require.NoError(t, err)
 
 	v.AddPolicy(DefaultDenyPolicy)
-	err = v.Authorize()
+	err = v.Authorize(ctx)
 	require.Equal(t, err, ErrPolicyDenied)
 
 	v.Reset()
 	v.AddPolicy(DefaultAllowPolicy)
-	require.NoError(t, v.Authorize())
+	require.NoError(t, v.Authorize(ctx))
 }
 
 func TestVerifierPolicies(t *testing.T) {
+	ctx := context.Background()
 	rng := rand.Reader
 	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
 
@@ -83,7 +86,7 @@ func TestVerifierPolicies(t *testing.T) {
 		IDs:  []Term{String("some_file.txt")},
 	}})
 
-	require.NoError(t, v.Authorize())
+	require.NoError(t, v.Authorize(ctx))
 
 	v, err = b.Authorizer(publicRoot)
 	require.NoError(t, err)
@@ -96,7 +99,7 @@ func TestVerifierPolicies(t *testing.T) {
 		Name: "resource",
 		IDs:  []Term{String("some_file.txt")},
 	}})
-	require.Equal(t, v.Authorize(), ErrNoMatchingPolicy)
+	require.Equal(t, v.Authorize(ctx), ErrNoMatchingPolicy)
 }
 
 func TestVerifierSerializeLoad(t *testing.T) {

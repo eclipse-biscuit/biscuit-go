@@ -357,9 +357,9 @@ func (w *World) Rules() []Rule {
 	return w.rules
 }
 
-func (w *World) Run(syms *SymbolTable) error {
+func (w *World) Run(ctx context.Context, syms *SymbolTable) error {
 	done := make(chan error)
-	ctx, cancel := context.WithTimeout(context.Background(), w.runLimits.maxDuration)
+	ctx, cancel := context.WithTimeout(ctx, w.runLimits.maxDuration)
 	defer cancel()
 
 	go func() {

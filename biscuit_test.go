@@ -1,6 +1,7 @@
 package biscuit
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 )
 
 func TestBiscuit(t *testing.T) {
+	ctx := context.Background()
 	rng := rand.Reader
 	const rootKeyID = 123
 	const contextText = "current_context"
@@ -106,21 +108,21 @@ func TestBiscuit(t *testing.T) {
 	v3.AddFact(Fact{Predicate: Predicate{Name: "resource", IDs: []Term{String("/a/file1")}}})
 	v3.AddFact(Fact{Predicate: Predicate{Name: "operation", IDs: []Term{String("read")}}})
 	v3.AddPolicy(DefaultAllowPolicy)
-	require.NoError(t, v3.Authorize())
+	require.NoError(t, v3.Authorize(ctx))
 
 	v3, err = b3deser.AuthorizerFor(WithSingularRootPublicKey(publicRoot))
 	require.NoError(t, err)
 	v3.AddFact(Fact{Predicate: Predicate{Name: "resource", IDs: []Term{String("/a/file2")}}})
 	v3.AddFact(Fact{Predicate: Predicate{Name: "operation", IDs: []Term{String("read")}}})
 	v3.AddPolicy(DefaultAllowPolicy)
-	require.Error(t, v3.Authorize())
+	require.Error(t, v3.Authorize(ctx))
 
 	v3, err = b3deser.AuthorizerFor(WithSingularRootPublicKey(publicRoot))
 	require.NoError(t, err)
 	v3.AddFact(Fact{Predicate: Predicate{Name: "resource", IDs: []Term{String("/a/file1")}}})
 	v3.AddFact(Fact{Predicate: Predicate{Name: "operation", IDs: []Term{String("write")}}})
 	v3.AddPolicy(DefaultAllowPolicy)
-	require.Error(t, v3.Authorize())
+	require.Error(t, v3.Authorize(ctx))
 }
 
 func TestSealedBiscuit(t *testing.T) {
@@ -181,6 +183,7 @@ func TestSealedBiscuit(t *testing.T) {
 }
 
 func TestBiscuitRules(t *testing.T) {
+	ctx := context.Background()
 	rng := rand.Reader
 	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
 
@@ -222,7 +225,7 @@ func TestBiscuitRules(t *testing.T) {
 	// b1 should allow alice & bob only
 	// v, err := b1.Verify(publicRoot)
 	// require.NoError(t, err)
-	verifyOwner(t, *b1, publicRoot, map[string]bool{"alice": true, "bob": true, "eve": false})
+	verifyOwner(ctx, t, *b1, publicRoot, map[string]bool{"alice": true, "bob": true, "eve": false})
 
 	block := b1.CreateBlock()
 	block.AddCheck(Check{
@@ -255,10 +258,10 @@ func TestBiscuitRules(t *testing.T) {
 	// b2 should now only allow alice
 	// v, err = b2.Verify(publicRoot)
 	// require.NoError(t, err)
-	verifyOwner(t, *b2, publicRoot, map[string]bool{"alice": true, "bob": false, "eve": false})
+	verifyOwner(ctx, t, *b2, publicRoot, map[string]bool{"alice": true, "bob": false, "eve": false})
 }
 
-func verifyOwner(t *testing.T, b Biscuit, publicRoot ed25519.PublicKey, owners map[string]bool) {
+func verifyOwner(ctx context.Context, t *testing.T, b Biscuit, publicRoot ed25519.PublicKey, owners map[string]bool) {
 	for user, valid := range owners {
 		v, err := b.AuthorizerFor(WithSingularRootPublicKey(publicRoot))
 		require.NoError(t, err)
@@ -278,9 +281,9 @@ func verifyOwner(t *testing.T, b Biscuit, publicRoot ed25519.PublicKey, owners m
 			v.AddPolicy(DefaultAllowPolicy)
 
 			if valid {
-				require.NoError(t, v.Authorize())
+				require.NoError(t, v.Authorize(ctx))
 			} else {
-				require.Error(t, v.Authorize())
+				require.Error(t, v.Authorize(ctx))
 			}
 		})
 	}
@@ -317,6 +320,7 @@ func TestCheckRootKey(t *testing.T) {
 }
 
 func TestGenerateWorld(t *testing.T) {
+	ctx := context.Background()
 	rng := rand.Reader
 	_, privateRoot, _ := ed25519.GenerateKey(rng)
 
@@ -349,7 +353,7 @@ func TestGenerateWorld(t *testing.T) {
 	require.NoError(t, err)
 
 	StringTable := (build.(*builderOptions)).symbols
-	world, err := b.generateWorld(defaultSymbolTable.Clone())
+	world, err := b.generateWorld(ctx, defaultSymbolTable.Clone())
 	require.NoError(t, err)
 
 	expectedWorld := datalog.NewWorld()
@@ -376,7 +380,7 @@ func TestGenerateWorld(t *testing.T) {
 	require.NoError(t, err)
 
 	allStrings := append(*StringTable, *(blockBuild.(*blockBuilder)).symbols...)
-	world, err = b2.generateWorld(&allStrings)
+	world, err = b2.generateWorld(ctx, &allStrings)
 	require.NoError(t, err)
 
 	expectedWorld = datalog.NewWorld()
@@ -575,6 +579,7 @@ func TestGetBlockID(t *testing.T) {
 }
 
 func TestInvalidRuleGeneration(t *testing.T) {
+	ctx := context.Background()
 	rng := rand.Reader
 	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
 	builder := NewBuilder(privateRoot)
@@ -612,7 +617,7 @@ func TestInvalidRuleGeneration(t *testing.T) {
 		IDs:  []Term{String("write")},
 	}})
 
-	err = verifier.Authorize()
+	err = verifier.Authorize(ctx)
 	t.Log(verifier.PrintWorld())
 	require.Error(t, err)
 }
