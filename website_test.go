@@ -4,6 +4,7 @@
 package biscuit_test
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
@@ -51,7 +52,7 @@ func CreateToken(root *ed25519.PrivateKey) (*biscuit.Biscuit, error) {
 	return token, nil
 }
 
-func Authorize(token *biscuit.Biscuit, root *ed25519.PublicKey) error {
+func Authorize(ctx context.Context, token *biscuit.Biscuit, root *ed25519.PublicKey) error {
 	authorizer, err := token.Authorizer(*root)
 	if err != nil {
 		return fmt.Errorf("failed to create verifier: %v", err)
@@ -75,7 +76,7 @@ func Authorize(token *biscuit.Biscuit, root *ed25519.PublicKey) error {
 	}
 	authorizer.AddPolicy(policy)
 
-	return authorizer.Authorize()
+	return authorizer.Authorize(ctx)
 }
 
 func Attenuate(serializedToken []byte, root *ed25519.PublicKey) ([]byte, error) {
@@ -108,11 +109,11 @@ func Seal(b *biscuit.Biscuit, rng io.Reader) (*biscuit.Biscuit, error) {
 	return b.Seal(rng)
 }
 
-func Query(authorizer biscuit.Authorizer) (biscuit.FactSet, error) {
+func Query(ctx context.Context, authorizer biscuit.Authorizer) (biscuit.FactSet, error) {
 	rule, err := parser.FromStringRule(`data($name, $id) <- user($name, $id`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse check: %v", err)
 	}
 
-	return authorizer.Query(rule)
+	return authorizer.Query(ctx, rule)
 }

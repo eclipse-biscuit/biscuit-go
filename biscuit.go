@@ -5,6 +5,7 @@ package biscuit
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 
@@ -297,6 +298,37 @@ func (b *Biscuit) Seal(rng io.Reader) (*Biscuit, error) {
 	}, nil
 }
 
+func (b *Biscuit) Lookup(factName string) []string {
+	symbols := b.symbols.Clone()
+	datalogFactName := symbols.Sym(factName)
+
+	if b.authority.facts == nil {
+		return nil
+	}
+
+	for _, f := range *b.authority.facts {
+		if f.Name != datalogFactName {
+			continue
+		}
+
+		terms := make([]string, len(f.Terms))
+		for i, term := range f.Terms {
+			switch t := term.(type) {
+			case datalog.String:
+				terms[i] = symbols.Str(t)
+			case datalog.Variable:
+				terms[i] = symbols.Var(t)
+			default:
+				terms[i] = t.String()
+			}
+		}
+
+		return terms
+	}
+
+	return nil
+}
+
 type (
 	// A PublickKeyByIDProjection inspects an optional ID for a public key and returns the
 	// corresponding public key, if any. If it doesn't recognize the ID or can't find the public
@@ -571,7 +603,7 @@ func (b *Biscuit) checkRootKey(root ed25519.PublicKey) error {
 	return nil
 }*/
 
-func (b *Biscuit) generateWorld(symbols *datalog.SymbolTable) (*datalog.World, error) {
+func (b *Biscuit) generateWorld(ctx context.Context, symbols *datalog.SymbolTable) (*datalog.World, error) {
 	world := datalog.NewWorld()
 
 	for _, fact := range *b.authority.facts {
@@ -592,7 +624,7 @@ func (b *Biscuit) generateWorld(symbols *datalog.SymbolTable) (*datalog.World, e
 		}
 	}
 
-	if err := world.Run(symbols); err != nil {
+	if err := world.Run(ctx, symbols); err != nil {
 		return nil, err
 	}
 

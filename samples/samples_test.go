@@ -4,6 +4,7 @@
 package biscuittest
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
@@ -142,7 +143,7 @@ type Validation struct {
 	RevocationIds  []string `json:"revocation_ids"`
 }
 
-func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
+func CheckSample(ctx context.Context, root_key ed25519.PublicKey, c TestCase, t *testing.T) {
 	// all these contain v4 blocks, which are not supported yet
 	if c.Filename == "test024_third_party.bc" ||
 		c.Filename == "test025_check_all.bc" ||
@@ -164,7 +165,7 @@ func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
 		}
 
 		for _, v := range c.Validations {
-			CompareResult(root_key, c.Filename, *token, v, t)
+			CompareResult(ctx, root_key, c.Filename, *token, v, t)
 		}
 
 	} else {
@@ -203,7 +204,7 @@ func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
 	require.Equal(t, sample, rebuilt.Code())
 }
 
-func CompareResult(root_key ed25519.PublicKey, filename string, token biscuit.Biscuit, v Validation, t *testing.T) {
+func CompareResult(ctx context.Context, root_key ed25519.PublicKey, filename string, token biscuit.Biscuit, v Validation, t *testing.T) {
 	p := parser.New()
 	authorizer_code, err := p.Authorizer(v.AuthorizerCode, nil)
 	require.NoError(t, err)
@@ -213,7 +214,7 @@ func CompareResult(root_key ed25519.PublicKey, filename string, token biscuit.Bi
 		CompareError(err, v.Result.Err, t)
 	} else {
 		authorizer.AddAuthorizer(authorizer_code)
-		err = authorizer.Authorize()
+		err = authorizer.Authorize(ctx)
 		if err != nil {
 			CompareError(err, v.Result.Err, t)
 		} else {
@@ -244,6 +245,7 @@ func CompareError(authorization_error error, sample_error *BiscuitError, t *test
 }
 
 func TestReadSamples(t *testing.T) {
+	ctx := context.Background()
 	b, err := os.ReadFile("./data/current/samples.json")
 	require.NoError(t, err)
 	var samples Samples
@@ -254,7 +256,7 @@ func TestReadSamples(t *testing.T) {
 	require.NoError(t, err)
 	fmt.Printf("Checking %d samples\n", len(samples.TestCases))
 	for _, v := range samples.TestCases {
-		t.Run(v.Filename, func(t *testing.T) { CheckSample(root_key, v, t) })
+		t.Run(v.Filename, func(t *testing.T) { CheckSample(ctx, root_key, v, t) })
 	}
 
 }
