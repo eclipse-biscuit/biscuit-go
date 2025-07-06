@@ -12,19 +12,19 @@ import (
 	"github.com/biscuit-auth/biscuit-go/v2/pb"
 )
 
-func tokenFactToProtoFactV2(input datalog.Fact) (*pb.FactV2, error) {
-	pred, err := tokenPredicateToProtoPredicateV2(input.Predicate)
+func tokenFactToProtoFact(input datalog.Fact) (*pb.Fact, error) {
+	pred, err := tokenPredicateToProtoPredicate(input.Predicate)
 	if err != nil {
 		return nil, err
 	}
 
-	return &pb.FactV2{
+	return &pb.Fact{
 		Predicate: pred,
 	}, nil
 }
 
-func protoFactToTokenFactV2(input *pb.FactV2) (*datalog.Fact, error) {
-	pred, err := protoPredicateToTokenPredicateV2(input.Predicate)
+func protoFactToTokenFact(input *pb.Fact) (*datalog.Fact, error) {
+	pred, err := protoPredicateToTokenPredicate(input.Predicate)
 	if err != nil {
 		return nil, err
 	}
@@ -33,27 +33,27 @@ func protoFactToTokenFactV2(input *pb.FactV2) (*datalog.Fact, error) {
 	}, nil
 }
 
-func tokenPredicateToProtoPredicateV2(input datalog.Predicate) (*pb.PredicateV2, error) {
-	pbTerms := make([]*pb.TermV2, len(input.Terms))
+func tokenPredicateToProtoPredicate(input datalog.Predicate) (*pb.Predicate, error) {
+	pbTerms := make([]*pb.Term, len(input.Terms))
 	var err error
 	for i, id := range input.Terms {
-		pbTerms[i], err = tokenIDToProtoIDV2(id)
+		pbTerms[i], err = tokenTermToProtoTerm(id)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	nameSymbol := uint64(input.Name)
-	return &pb.PredicateV2{
+	return &pb.Predicate{
 		Name:  &nameSymbol,
 		Terms: pbTerms,
 	}, nil
 }
 
-func protoPredicateToTokenPredicateV2(input *pb.PredicateV2) (*datalog.Predicate, error) {
+func protoPredicateToTokenPredicate(input *pb.Predicate) (*datalog.Predicate, error) {
 	Terms := make([]datalog.Term, len(input.Terms))
 	for i, id := range input.Terms {
-		dlid, err := protoIDToTokenIDV2(id)
+		dlid, err := protoTermToTokenTerm(id)
 		if err != nil {
 			return nil, err
 		}
@@ -68,32 +68,32 @@ func protoPredicateToTokenPredicateV2(input *pb.PredicateV2) (*datalog.Predicate
 	}, nil
 }
 
-func tokenIDToProtoIDV2(input datalog.Term) (*pb.TermV2, error) {
-	var pbId *pb.TermV2
+func tokenTermToProtoTerm(input datalog.Term) (*pb.Term, error) {
+	var pbId *pb.Term
 	switch input.Type() {
 	case datalog.TermTypeString:
-		pbId = &pb.TermV2{
-			Content: &pb.TermV2_String_{String_: uint64(input.(datalog.String))},
+		pbId = &pb.Term{
+			Content: &pb.Term_String_{String_: uint64(input.(datalog.String))},
 		}
 	case datalog.TermTypeDate:
-		pbId = &pb.TermV2{
-			Content: &pb.TermV2_Date{Date: uint64(input.(datalog.Date))},
+		pbId = &pb.Term{
+			Content: &pb.Term_Date{Date: uint64(input.(datalog.Date))},
 		}
 	case datalog.TermTypeInteger:
-		pbId = &pb.TermV2{
-			Content: &pb.TermV2_Integer{Integer: int64(input.(datalog.Integer))},
+		pbId = &pb.Term{
+			Content: &pb.Term_Integer{Integer: int64(input.(datalog.Integer))},
 		}
 	case datalog.TermTypeVariable:
-		pbId = &pb.TermV2{
-			Content: &pb.TermV2_Variable{Variable: uint32(input.(datalog.Variable))},
+		pbId = &pb.Term{
+			Content: &pb.Term_Variable{Variable: uint32(input.(datalog.Variable))},
 		}
 	case datalog.TermTypeBytes:
-		pbId = &pb.TermV2{
-			Content: &pb.TermV2_Bytes{Bytes: input.(datalog.Bytes)},
+		pbId = &pb.Term{
+			Content: &pb.Term_Bytes{Bytes: input.(datalog.Bytes)},
 		}
 	case datalog.TermTypeBool:
-		pbId = &pb.TermV2{
-			Content: &pb.TermV2_Bool{Bool: bool(input.(datalog.Bool))},
+		pbId = &pb.Term{
+			Content: &pb.Term_Bool{Bool: bool(input.(datalog.Bool))},
 		}
 	case datalog.TermTypeSet:
 		datalogSet := input.(datalog.Set)
@@ -109,7 +109,7 @@ func tokenIDToProtoIDV2(input datalog.Term) (*pb.TermV2, error) {
 			return nil, errors.New("biscuit: failed to convert token ID to proto ID: set cannot contains other sets")
 		}
 
-		protoSet := make([]*pb.TermV2, 0, len(datalogSet))
+		protoSet := make([]*pb.Term, 0, len(datalogSet))
 		for _, datalogElt := range datalogSet {
 			if datalogElt.Type() != expectedEltType {
 				return nil, fmt.Errorf(
@@ -119,15 +119,15 @@ func tokenIDToProtoIDV2(input datalog.Term) (*pb.TermV2, error) {
 				)
 			}
 
-			protoElt, err := tokenIDToProtoIDV2(datalogElt)
+			protoElt, err := tokenTermToProtoTerm(datalogElt)
 			if err != nil {
 				return nil, err
 			}
 
 			protoSet = append(protoSet, protoElt)
 		}
-		pbId = &pb.TermV2{
-			Content: &pb.TermV2_Set{
+		pbId = &pb.Term{
+			Content: &pb.Term_Set{
 				Set: &pb.TermSet{
 					Set: protoSet,
 				},
@@ -139,22 +139,22 @@ func tokenIDToProtoIDV2(input datalog.Term) (*pb.TermV2, error) {
 	return pbId, nil
 }
 
-func protoIDToTokenIDV2(input *pb.TermV2) (*datalog.Term, error) {
+func protoTermToTokenTerm(input *pb.Term) (*datalog.Term, error) {
 	var id datalog.Term
 	switch input.Content.(type) {
-	case *pb.TermV2_String_:
+	case *pb.Term_String_:
 		id = datalog.String(input.GetString_())
-	case *pb.TermV2_Date:
+	case *pb.Term_Date:
 		id = datalog.Date(input.GetDate())
-	case *pb.TermV2_Integer:
+	case *pb.Term_Integer:
 		id = datalog.Integer(input.GetInteger())
-	case *pb.TermV2_Variable:
+	case *pb.Term_Variable:
 		id = datalog.Variable(input.GetVariable())
-	case *pb.TermV2_Bytes:
+	case *pb.Term_Bytes:
 		id = datalog.Bytes(input.GetBytes())
-	case *pb.TermV2_Bool:
+	case *pb.Term_Bool:
 		id = datalog.Bool(input.GetBool())
-	case *pb.TermV2_Set:
+	case *pb.Term_Set:
 		elts := input.GetSet().Set
 		if len(elts) == 0 {
 			return nil, errors.New("biscuit: failed to convert proto ID to token ID: set cannot be empty")
@@ -162,9 +162,9 @@ func protoIDToTokenIDV2(input *pb.TermV2) (*datalog.Term, error) {
 
 		expectedEltType := reflect.TypeOf(elts[0].GetContent())
 		switch expectedEltType {
-		case reflect.TypeOf(&pb.TermV2_Variable{}):
+		case reflect.TypeOf(&pb.Term_Variable{}):
 			return nil, errors.New("biscuit: failed to convert proto ID to token ID: set cannot contains variable")
-		case reflect.TypeOf(&pb.TermV2_Set{}):
+		case reflect.TypeOf(&pb.Term_Set{}):
 			return nil, errors.New("biscuit: failed to convert proto ID to token ID: set cannot contains other sets")
 		}
 
@@ -178,7 +178,7 @@ func protoIDToTokenIDV2(input *pb.TermV2) (*datalog.Term, error) {
 				)
 			}
 
-			datalogElt, err := protoIDToTokenIDV2(protoElt)
+			datalogElt, err := protoTermToTokenTerm(protoElt)
 			if err != nil {
 				return nil, err
 			}
@@ -192,41 +192,41 @@ func protoIDToTokenIDV2(input *pb.TermV2) (*datalog.Term, error) {
 	return &id, nil
 }
 
-func tokenRuleToProtoRuleV2(input datalog.Rule) (*pb.RuleV2, error) {
-	pbBody := make([]*pb.PredicateV2, len(input.Body))
+func tokenRuleToProtoRule(input datalog.Rule) (*pb.Rule, error) {
+	pbBody := make([]*pb.Predicate, len(input.Body))
 	for i, p := range input.Body {
-		pred, err := tokenPredicateToProtoPredicateV2(p)
+		pred, err := tokenPredicateToProtoPredicate(p)
 		if err != nil {
 			return nil, err
 		}
 		pbBody[i] = pred
 	}
 
-	pbExpressions := make([]*pb.ExpressionV2, len(input.Expressions))
+	pbExpressions := make([]*pb.Expression, len(input.Expressions))
 	for i, e := range input.Expressions {
-		expr, err := tokenExpressionToProtoExpressionV2(e)
+		expr, err := tokenExpressionToProtoExpression(e)
 		if err != nil {
 			return nil, err
 		}
 		pbExpressions[i] = expr
 	}
 
-	pbHead, err := tokenPredicateToProtoPredicateV2(input.Head)
+	pbHead, err := tokenPredicateToProtoPredicate(input.Head)
 	if err != nil {
 		return nil, err
 	}
 
-	return &pb.RuleV2{
+	return &pb.Rule{
 		Head:        pbHead,
 		Body:        pbBody,
 		Expressions: pbExpressions,
 	}, nil
 }
 
-func protoRuleToTokenRuleV2(input *pb.RuleV2) (*datalog.Rule, error) {
+func protoRuleToTokenRule(input *pb.Rule) (*datalog.Rule, error) {
 	body := make([]datalog.Predicate, len(input.Body))
 	for i, pb := range input.Body {
-		b, err := protoPredicateToTokenPredicateV2(pb)
+		b, err := protoPredicateToTokenPredicate(pb)
 		if err != nil {
 			return nil, err
 		}
@@ -235,14 +235,14 @@ func protoRuleToTokenRuleV2(input *pb.RuleV2) (*datalog.Rule, error) {
 
 	expressions := make([]datalog.Expression, len(input.Expressions))
 	for i, pbExpression := range input.Expressions {
-		e, err := protoExpressionToTokenExpressionV2(pbExpression)
+		e, err := protoExpressionToTokenExpression(pbExpression)
 		if err != nil {
 			return nil, err
 		}
 		expressions[i] = e
 	}
 
-	head, err := protoPredicateToTokenPredicateV2(input.Head)
+	head, err := protoPredicateToTokenPredicate(input.Head)
 	if err != nil {
 		return nil, err
 	}
@@ -253,15 +253,15 @@ func protoRuleToTokenRuleV2(input *pb.RuleV2) (*datalog.Rule, error) {
 	}, nil
 }
 
-func tokenExpressionToProtoExpressionV2(input datalog.Expression) (*pb.ExpressionV2, error) {
-	pbExpr := &pb.ExpressionV2{
+func tokenExpressionToProtoExpression(input datalog.Expression) (*pb.Expression, error) {
+	pbExpr := &pb.Expression{
 		Ops: make([]*pb.Op, len(input)),
 	}
 
 	for i, op := range input {
 		switch op.Type() {
 		case datalog.OpTypeValue:
-			pbID, err := tokenIDToProtoIDV2(op.(datalog.Value).ID)
+			pbID, err := tokenTermToProtoTerm(op.(datalog.Value).ID)
 			if err != nil {
 				return nil, err
 			}
@@ -285,12 +285,12 @@ func tokenExpressionToProtoExpressionV2(input datalog.Expression) (*pb.Expressio
 	return pbExpr, nil
 }
 
-func protoExpressionToTokenExpressionV2(input *pb.ExpressionV2) (datalog.Expression, error) {
+func protoExpressionToTokenExpression(input *pb.Expression) (datalog.Expression, error) {
 	expr := make(datalog.Expression, len(input.Ops))
 	for i, op := range input.Ops {
 		switch op.Content.(type) {
 		case *pb.Op_Value:
-			id, err := protoIDToTokenIDV2(op.GetValue())
+			id, err := protoTermToTokenTerm(op.GetValue())
 			if err != nil {
 				return nil, err
 			}
@@ -430,25 +430,25 @@ func protoExprBinaryToTokenExprBinary(op *pb.OpBinary) (datalog.BinaryOpFunc, er
 	return binaryOp, nil
 }
 
-func tokenCheckToProtoCheckV2(input datalog.Check) (*pb.CheckV2, error) {
-	pbQueries := make([]*pb.RuleV2, len(input.Queries))
+func tokenCheckToProtoCheck(input datalog.Check) (*pb.Check, error) {
+	pbQueries := make([]*pb.Rule, len(input.Queries))
 	for i, query := range input.Queries {
-		q, err := tokenRuleToProtoRuleV2(query)
+		q, err := tokenRuleToProtoRule(query)
 		if err != nil {
 			return nil, err
 		}
 		pbQueries[i] = q
 	}
 
-	return &pb.CheckV2{
+	return &pb.Check{
 		Queries: pbQueries,
 	}, nil
 }
 
-func protoCheckToTokenCheckV2(input *pb.CheckV2) (*datalog.Check, error) {
+func protoCheckToTokenCheck(input *pb.Check) (*datalog.Check, error) {
 	queries := make([]datalog.Rule, len(input.Queries))
 	for i, query := range input.Queries {
-		q, err := protoRuleToTokenRuleV2(query)
+		q, err := protoRuleToTokenRule(query)
 		if err != nil {
 			return nil, err
 		}
@@ -460,7 +460,7 @@ func protoCheckToTokenCheckV2(input *pb.CheckV2) (*datalog.Check, error) {
 	}, nil
 }
 
-func protoPublicKeyToTokenPublicKeyV2(input *pb.PublicKey) (PublicKey, error) {
+func protoPublicKeyToTokenPublicKey(input *pb.PublicKey) (PublicKey, error) {
 	switch *input.Algorithm {
 	case pb.PublicKey_Ed25519:
 		if len(input.Key) != 32 {
@@ -472,7 +472,7 @@ func protoPublicKeyToTokenPublicKeyV2(input *pb.PublicKey) (PublicKey, error) {
 	}
 }
 
-func tokenPublicKeyToProtoPublicKeyV2(input PublicKey) (*pb.PublicKey, error) {
+func tokenPublicKeyToProtoPublicKey(input PublicKey) (*pb.PublicKey, error) {
 	switch input.Algorithm() {
 	case AlgorithmEd25519:
 		algorithm := pb.PublicKey_Ed25519

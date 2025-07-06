@@ -332,13 +332,13 @@ func (v *authorizer) LoadPolicies(authorizerPolicies []byte) error {
 
 	switch pbPolicies.GetVersion() {
 	case 3:
-		return v.loadPoliciesV2(pbPolicies)
+		return v.loadPolicies(pbPolicies)
 	default:
 		return fmt.Errorf("verifier: unsupported policies version %d", pbPolicies.GetVersion())
 	}
 }
 
-func (v *authorizer) loadPoliciesV2(pbPolicies *pb.AuthorizerPolicies) error {
+func (v *authorizer) loadPolicies(pbPolicies *pb.AuthorizerPolicies) error {
 	policySymbolTable := datalog.SymbolTable{
 		Symbols: pbPolicies.Symbols,
 	}
@@ -346,7 +346,7 @@ func (v *authorizer) loadPoliciesV2(pbPolicies *pb.AuthorizerPolicies) error {
 	v.symbols.Extend(&policySymbolTable)
 
 	for _, pbFact := range pbPolicies.Facts {
-		fact, err := protoFactToTokenFactV2(pbFact)
+		fact, err := protoFactToTokenFact(pbFact)
 		if err != nil {
 			return fmt.Errorf("verifier: load policies v1: failed to convert datalog fact: %w", err)
 		}
@@ -354,7 +354,7 @@ func (v *authorizer) loadPoliciesV2(pbPolicies *pb.AuthorizerPolicies) error {
 	}
 
 	for _, pbRule := range pbPolicies.Rules {
-		rule, err := protoRuleToTokenRuleV2(pbRule)
+		rule, err := protoRuleToTokenRule(pbRule)
 		if err != nil {
 			return fmt.Errorf("verifier: load policies v1: failed to convert datalog rule: %w", err)
 		}
@@ -363,7 +363,7 @@ func (v *authorizer) loadPoliciesV2(pbPolicies *pb.AuthorizerPolicies) error {
 
 	v.checks = make([]Check, len(pbPolicies.Checks))
 	for i, pbCheck := range pbPolicies.Checks {
-		dlCheck, err := protoCheckToTokenCheckV2(pbCheck)
+		dlCheck, err := protoCheckToTokenCheck(pbCheck)
 		if err != nil {
 			return fmt.Errorf("verifier: load policies v1: failed to convert datalog check: %w", err)
 		}
@@ -388,7 +388,7 @@ func (v *authorizer) loadPoliciesV2(pbPolicies *pb.AuthorizerPolicies) error {
 
 		policy.Queries = make([]Rule, len(pbPolicy.Queries))
 		for j, pbRule := range pbPolicy.Queries {
-			dlRule, err := protoRuleToTokenRuleV2(pbRule)
+			dlRule, err := protoRuleToTokenRule(pbRule)
 			if err != nil {
 				return fmt.Errorf("verifier: load policies v1: failed to convert datalog policy rule: %w", err)
 			}
@@ -410,27 +410,27 @@ func (v *authorizer) SerializePolicies() ([]byte, error) {
 		return nil, errors.New("verifier: can't serialize after world has been run")
 	}
 
-	protoFacts := make([]*pb.FactV2, len(*v.world.Facts()))
+	protoFacts := make([]*pb.Fact, len(*v.world.Facts()))
 	for i, fact := range *v.world.Facts() {
-		protoFact, err := tokenFactToProtoFactV2(fact)
+		protoFact, err := tokenFactToProtoFact(fact)
 		if err != nil {
 			return nil, fmt.Errorf("verifier: failed to convert fact: %w", err)
 		}
 		protoFacts[i] = protoFact
 	}
 
-	protoRules := make([]*pb.RuleV2, len(v.world.Rules()))
+	protoRules := make([]*pb.Rule, len(v.world.Rules()))
 	for i, rule := range v.world.Rules() {
-		protoRule, err := tokenRuleToProtoRuleV2(rule)
+		protoRule, err := tokenRuleToProtoRule(rule)
 		if err != nil {
 			return nil, fmt.Errorf("verifier: failed to convert rule: %w", err)
 		}
 		protoRules[i] = protoRule
 	}
 
-	protoChecks := make([]*pb.CheckV2, len(v.checks))
+	protoChecks := make([]*pb.Check, len(v.checks))
 	for i, check := range v.checks {
-		protoCheck, err := tokenCheckToProtoCheckV2(check.convert(v.symbols))
+		protoCheck, err := tokenCheckToProtoCheck(check.convert(v.symbols))
 		if err != nil {
 			return nil, fmt.Errorf("verifier: failed to convert check: %w", err)
 		}
@@ -451,9 +451,9 @@ func (v *authorizer) SerializePolicies() ([]byte, error) {
 			return nil, fmt.Errorf("verifier: unsupported policy kind %v", policy.Kind)
 		}
 
-		protoPolicy.Queries = make([]*pb.RuleV2, len(policy.Queries))
+		protoPolicy.Queries = make([]*pb.Rule, len(policy.Queries))
 		for j, rule := range policy.Queries {
-			protoRule, err := tokenRuleToProtoRuleV2(rule.convert(v.symbols))
+			protoRule, err := tokenRuleToProtoRule(rule.convert(v.symbols))
 			if err != nil {
 				return nil, fmt.Errorf("verifier: failed to convert policy rule: %w", err)
 			}

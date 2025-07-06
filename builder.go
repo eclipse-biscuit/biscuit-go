@@ -221,7 +221,7 @@ func UnmarshalSerialized(serialized []byte) (*SerializedBiscuit, error) {
 
 	authority := new(CryptoBlock)
 	authority.Data = container.Authority.Block
-	nextKey, err := protoPublicKeyToTokenPublicKeyV2(container.Authority.NextKey)
+	nextKey, err := protoPublicKeyToTokenPublicKey(container.Authority.NextKey)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +234,7 @@ func UnmarshalSerialized(serialized []byte) (*SerializedBiscuit, error) {
 	for i, sb := range container.Blocks {
 		block := new(CryptoBlock)
 		block.Data = sb.Block
-		nextKey, err := protoPublicKeyToTokenPublicKeyV2(sb.NextKey)
+		nextKey, err := protoPublicKeyToTokenPublicKey(sb.NextKey)
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +242,7 @@ func UnmarshalSerialized(serialized []byte) (*SerializedBiscuit, error) {
 		block.Signature = sb.Signature
 		if sb.ExternalSignature != nil {
 			externalSignature := new(ExternalSignature)
-			publicKey, err := protoPublicKeyToTokenPublicKeyV2(sb.ExternalSignature.PublicKey)
+			publicKey, err := protoPublicKeyToTokenPublicKey(sb.ExternalSignature.PublicKey)
 			if err != nil {
 				return nil, err
 			}
