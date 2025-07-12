@@ -4,7 +4,6 @@
 package biscuit
 
 import (
-	"crypto/ed25519"
 	"crypto/rand"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 
 func TestVerifierDefaultPolicy(t *testing.T) {
 	rng := rand.Reader
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := NewEd25519KeyPair(rng)
 
 	builder := NewBuilder(privateRoot)
 	err := builder.AddAuthorityFact(Fact{Predicate{
@@ -42,7 +41,7 @@ func TestVerifierDefaultPolicy(t *testing.T) {
 
 func TestVerifierPolicies(t *testing.T) {
 	rng := rand.Reader
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := NewEd25519KeyPair(rng)
 
 	builder := NewBuilder(privateRoot)
 	err := builder.AddAuthorityRule(Rule{
@@ -104,7 +103,7 @@ func TestVerifierPolicies(t *testing.T) {
 
 func TestVerifierSerializeLoad(t *testing.T) {
 	rng := rand.Reader
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := NewEd25519KeyPair(rng)
 
 	builder := NewBuilder(privateRoot)
 	b, err := builder.Build()

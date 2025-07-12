@@ -4,7 +4,6 @@
 package biscuit_test
 
 import (
-	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
 
@@ -14,7 +13,7 @@ import (
 
 func ExampleBiscuit() {
 	rng := rand.Reader
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := biscuit.NewEd25519KeyPair(rng)
 
 	authority, err := parser.FromStringBlockWithParams(`
 		right("/a/file1.txt", {read});

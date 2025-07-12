@@ -191,6 +191,7 @@ type Rule struct {
 	Head        Predicate
 	Body        []Predicate
 	Expressions []Expression
+	Scopes      []Scope
 }
 
 type InvalidRuleError struct {
@@ -409,40 +410,6 @@ func (w *World) Run(syms *SymbolTable) error {
 	case err := <-done:
 		return err
 	}
-}
-
-func (w *World) Query(pred Predicate) *FactSet {
-	res := &FactSet{}
-	for _, f := range *w.facts {
-		if f.Predicate.Name != pred.Name {
-			continue
-		}
-
-		// if the predicate has a different number of IDs
-		// the fact must not match
-		if len(f.Predicate.Terms) != len(pred.Terms) {
-			continue
-		}
-
-		matches := true
-		for i := 0; i < len(pred.Terms); i++ {
-			fID := f.Predicate.Terms[i]
-			pID := pred.Terms[i]
-
-			if pID.Type() != TermTypeVariable {
-				if fID.Type() != pID.Type() || fID != pID {
-					matches = false
-					break
-				}
-
-			}
-		}
-
-		if matches {
-			res.Insert(f)
-		}
-	}
-	return res
 }
 
 func (w *World) QueryRule(rule Rule, syms *SymbolTable) *FactSet {
