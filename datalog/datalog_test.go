@@ -69,7 +69,12 @@ func TestFamily(t *testing.T) {
 		t.Error(err)
 	}
 
-	res := w.Query(Predicate{grandparent, []Term{hashVar("grandparent"), hashVar("grandchild")}})
+	res := w.QueryRule(Rule{
+		Head: Predicate{grandparent, []Term{hashVar("grandparent"), hashVar("grandchild")}},
+		Body: []Predicate{
+			{grandparent, []Term{hashVar("grandparent"), hashVar("grandchild")}},
+		},
+	}, syms)
 	t.Logf("grandparents after inserting parent(C, E): %s", dbg.FactSet(res))
 	expected := &FactSet{
 		Fact{Predicate{grandparent, []Term{a, c}}},
