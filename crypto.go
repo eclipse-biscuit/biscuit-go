@@ -5,10 +5,11 @@ package biscuit
 
 import (
 	"crypto/ed25519"
+	"errors"
 	"io"
 )
 
-type Algorithm byte
+type Algorithm int32
 
 const (
 	AlgorithmEd25519 Algorithm = 0
@@ -23,6 +24,12 @@ type PublicKey interface {
 type PrivateKey interface {
 	Algorithm() Algorithm
 	Sign(message []byte) ([]byte, error)
+	PublicKey() PublicKey
+}
+
+type SerializablePrivateKey interface {
+	Algorithm() Algorithm
+	Serialize() []byte
 }
 
 type Ed25519PublicKey struct {
@@ -41,6 +48,13 @@ func (k *Ed25519PublicKey) Serialize() []byte {
 	return k.Key
 }
 
+func Ed25519PublicKeyDeserialize(data []byte) (*Ed25519PublicKey, error) {
+	if len(data) != ed25519.PublicKeySize {
+		return nil, errors.New("invalid public key size")
+	}
+	return &Ed25519PublicKey{Key: data}, nil
+}
+
 type Ed25519PrivateKey struct {
 	Key ed25519.PrivateKey
 }
@@ -53,7 +67,22 @@ func (k *Ed25519PrivateKey) Sign(message []byte) ([]byte, error) {
 	return ed25519.Sign(k.Key, message), nil
 }
 
-func NewEd25519KeyPair(rng io.Reader) (PublicKey, PrivateKey, error) {
+func (k *Ed25519PrivateKey) PublicKey() PublicKey {
+	return &Ed25519PublicKey{Key: k.Key.Public().(ed25519.PublicKey)}
+}
+
+func (k *Ed25519PrivateKey) Serialize() []byte {
+	return k.Key.Seed()
+}
+
+func Ed25519PrivateKeyDeserialize(data []byte) (*Ed25519PrivateKey, error) {
+	if len(data) != ed25519.SeedSize {
+		return nil, errors.New("invalid seed size")
+	}
+	return &Ed25519PrivateKey{Key: ed25519.NewKeyFromSeed(data)}, nil
+}
+
+func NewEd25519KeyPair(rng io.Reader) (*Ed25519PublicKey, *Ed25519PrivateKey, error) {
 	pub, priv, err := ed25519.GenerateKey(rng)
 	if err != nil {
 		return nil, nil, err

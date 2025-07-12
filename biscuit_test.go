@@ -4,7 +4,6 @@
 package biscuit
 
 import (
-	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
 	"testing"
@@ -17,7 +16,7 @@ func TestBiscuit(t *testing.T) {
 	rng := rand.Reader
 	const rootKeyID = 123
 	const contextText = "current_context"
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := NewEd25519KeyPair(rng)
 
 	builder := NewBuilder(
 		privateRoot,
@@ -128,7 +127,7 @@ func TestBiscuit(t *testing.T) {
 
 func TestSealedBiscuit(t *testing.T) {
 	rng := rand.Reader
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := NewEd25519KeyPair(rng)
 
 	builder := NewBuilder(privateRoot)
 
@@ -185,7 +184,7 @@ func TestSealedBiscuit(t *testing.T) {
 
 func TestBiscuitRules(t *testing.T) {
 	rng := rand.Reader
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := NewEd25519KeyPair(rng)
 
 	builder := NewBuilder(privateRoot)
 
@@ -261,7 +260,7 @@ func TestBiscuitRules(t *testing.T) {
 	verifyOwner(t, *b2, publicRoot, map[string]bool{"alice": true, "bob": false, "eve": false})
 }
 
-func verifyOwner(t *testing.T, b Biscuit, publicRoot ed25519.PublicKey, owners map[string]bool) {
+func verifyOwner(t *testing.T, b Biscuit, publicRoot PublicKey, owners map[string]bool) {
 	for user, valid := range owners {
 		v, err := b.AuthorizerFor(WithSingularRootPublicKey(publicRoot))
 		require.NoError(t, err)
@@ -292,36 +291,36 @@ func verifyOwner(t *testing.T, b Biscuit, publicRoot ed25519.PublicKey, owners m
 func TestCheckRootKey(t *testing.T) {
 	rng := rand.Reader
 	const rootKeyID = 123
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := NewEd25519KeyPair(rng)
 
 	builder := NewBuilder(privateRoot, WithRootKeyID(rootKeyID))
 
 	b, err := builder.Build()
 	require.NoError(t, err)
 
-	_, err = b.AuthorizerFor(WithRootPublicKeys(map[uint32]ed25519.PublicKey{
+	_, err = b.AuthorizerFor(WithRootPublicKeys(map[uint32]PublicKey{
 		rootKeyID: publicRoot,
 	}, nil))
 	require.NoError(t, err)
 
-	_, err = b.AuthorizerFor(WithRootPublicKeys(map[uint32]ed25519.PublicKey{
+	_, err = b.AuthorizerFor(WithRootPublicKeys(map[uint32]PublicKey{
 		rootKeyID + 1: publicRoot,
 	}, nil))
 	require.ErrorIs(t, err, ErrNoPublicKeyAvailable)
 
-	_, err = b.AuthorizerFor(WithRootPublicKeys(map[uint32]ed25519.PublicKey{
+	_, err = b.AuthorizerFor(WithRootPublicKeys(map[uint32]PublicKey{
 		rootKeyID: nil,
 	}, nil))
 	require.ErrorIs(t, err, ErrNoPublicKeyAvailable)
 
-	publicNotRoot, _, _ := ed25519.GenerateKey(rng)
+	publicNotRoot, _, _ := NewEd25519KeyPair(rng)
 	_, err = b.AuthorizerFor(WithSingularRootPublicKey(publicNotRoot))
 	require.Equal(t, ErrInvalidSignature, err)
 }
 
 func TestGenerateWorld(t *testing.T) {
 	rng := rand.Reader
-	_, privateRoot, _ := ed25519.GenerateKey(rng)
+	_, privateRoot, _ := NewEd25519KeyPair(rng)
 
 	build := NewBuilder(privateRoot)
 
@@ -398,7 +397,7 @@ func TestGenerateWorld(t *testing.T) {
 
 func TestAppendErrors(t *testing.T) {
 	rng := rand.Reader
-	_, privateRoot, _ := ed25519.GenerateKey(rng)
+	_, privateRoot, _ := NewEd25519KeyPair(rng)
 	builder := NewBuilder(privateRoot)
 	builder.AddAuthorityFact(Fact{
 		Predicate: Predicate{Name: "newfact", IDs: []Term{String("/a/file1"), String("read")}},
@@ -436,7 +435,7 @@ func TestNewErrors(t *testing.T) {
 	rng := rand.Reader
 
 	t.Run("authority block Strings overlap", func(t *testing.T) {
-		_, privateRoot, _ := ed25519.GenerateKey(rng)
+		_, privateRoot, _ := NewEd25519KeyPair(rng)
 		_, err := New(rng, privateRoot, &datalog.SymbolTable{Symbols: []string{"String1", "String2"}}, &Block{
 			symbols: &datalog.SymbolTable{Symbols: []string{"String1"}},
 		})
@@ -446,7 +445,7 @@ func TestNewErrors(t *testing.T) {
 
 func TestBiscuitVerifyErrors(t *testing.T) {
 	rng := rand.Reader
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := NewEd25519KeyPair(rng)
 
 	builder := NewBuilder(privateRoot)
 	b, err := builder.Build()
@@ -455,7 +454,7 @@ func TestBiscuitVerifyErrors(t *testing.T) {
 	_, err = b.AuthorizerFor(WithSingularRootPublicKey(publicRoot))
 	require.NoError(t, err)
 
-	publicTest, _, _ := ed25519.GenerateKey(rng)
+	publicTest, _, _ := NewEd25519KeyPair(rng)
 	_, err = b.AuthorizerFor(WithSingularRootPublicKey(publicTest))
 	require.Error(t, err)
 }
@@ -510,7 +509,7 @@ p
 
 func TestGetBlockID(t *testing.T) {
 	rng := rand.Reader
-	_, privateRoot, _ := ed25519.GenerateKey(rng)
+	_, privateRoot, _ := NewEd25519KeyPair(rng)
 	builder := NewBuilder(privateRoot)
 
 	// add 3 facts authority_0_fact_{0,1,2} in authority block
@@ -581,7 +580,7 @@ func TestGetBlockID(t *testing.T) {
 
 func TestInvalidRuleGeneration(t *testing.T) {
 	rng := rand.Reader
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := NewEd25519KeyPair(rng)
 	builder := NewBuilder(privateRoot)
 	builder.AddAuthorityCheck(Check{Queries: []Rule{
 		{

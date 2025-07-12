@@ -4,7 +4,6 @@
 package biscuit
 
 import (
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
@@ -32,7 +31,7 @@ type Builder interface {
 
 type builderOptions struct {
 	rng       io.Reader
-	rootKey   ed25519.PrivateKey
+	rootKey   PrivateKey
 	rootKeyID *uint32
 
 	symbolsStart int
@@ -61,7 +60,7 @@ func WithSymbols(symbols *datalog.SymbolTable) builderOption {
 	return symbolsOption{symbols}
 }
 
-func NewBuilder(root ed25519.PrivateKey, opts ...builderOption) Builder {
+func NewBuilder(root PrivateKey, opts ...builderOption) Builder {
 	b := &builderOptions{
 		rootKey:      root,
 		symbols:      defaultSymbolTable.Clone(),

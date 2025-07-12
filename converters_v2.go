@@ -466,7 +466,7 @@ func protoPublicKeyToTokenPublicKey(input *pb.PublicKey) (PublicKey, error) {
 		if len(input.Key) != 32 {
 			return nil, ErrInvalidKeySize
 		}
-		return &Ed25519PublicKey{Key: input.Key}, nil
+		return Ed25519PublicKeyDeserialize(input.Key)
 	default:
 		return nil, fmt.Errorf("biscuit: unsupported public key algorithm: %v", input.Algorithm)
 	}

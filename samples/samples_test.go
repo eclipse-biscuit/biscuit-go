@@ -4,7 +4,6 @@
 package biscuittest
 
 import (
-	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -142,7 +141,7 @@ type Validation struct {
 	RevocationIds  []string `json:"revocation_ids"`
 }
 
-func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
+func CheckSample(root_key biscuit.PublicKey, c TestCase, t *testing.T) {
 	// all these contain v4 blocks, which are not supported yet
 	if //c.Filename == "test024_third_party.bc" ||
 	c.Filename == "test025_check_all.bc" ||
@@ -191,7 +190,7 @@ func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
 	p := parser.New()
 
 	rng := rand.Reader
-	_, privateRoot, _ := ed25519.GenerateKey(rng)
+	_, privateRoot, _ := biscuit.NewEd25519KeyPair(rng)
 	authority, err := p.Block(blocks[0].Code, nil)
 	require.NoError(t, err)
 	builder := biscuit.NewBuilder(privateRoot)
@@ -213,7 +212,7 @@ func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
 	require.Equal(t, sample, rebuilt.Code())
 }
 
-func CompareResult(root_key ed25519.PublicKey, filename string, token biscuit.Biscuit, v Validation, t *testing.T) {
+func CompareResult(root_key biscuit.PublicKey, filename string, token biscuit.Biscuit, v Validation, t *testing.T) {
 	p := parser.New()
 	authorizer_code, err := p.Authorizer(v.AuthorizerCode, nil)
 	require.NoError(t, err)
@@ -260,7 +259,9 @@ func TestReadSamples(t *testing.T) {
 	err = json.Unmarshal(b, &samples)
 	require.NoError(t, err)
 
-	root_key, err := hex.DecodeString(samples.RootPublicKey)
+	root_key_data, err := hex.DecodeString(samples.RootPublicKey)
+	require.NoError(t, err)
+	root_key, err := biscuit.Ed25519PublicKeyDeserialize(root_key_data)
 	require.NoError(t, err)
 	fmt.Printf("Checking %d samples\n", len(samples.TestCases))
 	for _, v := range samples.TestCases {

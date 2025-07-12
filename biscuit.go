@@ -68,7 +68,7 @@ type biscuitOption interface {
 	applyToBiscuit(*biscuitOptions) error
 }
 
-func newBiscuit(root ed25519.PrivateKey, baseSymbols *datalog.SymbolTable, authority *Block, opts ...biscuitOption) (*Biscuit, error) {
+func newBiscuit(root PrivateKey, baseSymbols *datalog.SymbolTable, authority *Block, opts ...biscuitOption) (*Biscuit, error) {
 	options := biscuitOptions{
 		rng: rand.Reader,
 	}
@@ -86,7 +86,7 @@ func newBiscuit(root ed25519.PrivateKey, baseSymbols *datalog.SymbolTable, autho
 
 	symbols.Extend(authority.symbols)
 
-	nextPublicKey, nextPrivateKey, _ := ed25519.GenerateKey(options.rng)
+	nextPublicKey, nextPrivateKey, _ := NewEd25519KeyPair(options.rng)
 
 	protoAuthority, err := tokenBlockToProtoBlock(authority)
 	if err != nil {
@@ -101,12 +101,16 @@ func newBiscuit(root ed25519.PrivateKey, baseSymbols *datalog.SymbolTable, autho
 	toSignAlgorithm := make([]byte, 4)
 	binary.LittleEndian.PutUint32(toSignAlgorithm[0:], uint32(pb.PublicKey_Ed25519))
 	toSign := append(marshalledAuthority[:], toSignAlgorithm...)
-	toSign = append(toSign, nextPublicKey[:]...)
+	toSign = append(toSign, nextPublicKey.Serialize()...)
 
-	signature := ed25519.Sign(root, toSign)
+	signature, err := root.Sign(toSign)
+	if err != nil {
+		return nil, err
+	}
+
 	nextKey := &pb.PublicKey{
 		Algorithm: &algorithm,
-		Key:       nextPublicKey,
+		Key:       nextPublicKey.Serialize(),
 	}
 
 	signedBlock := &pb.SignedBlock{
@@ -117,7 +121,7 @@ func newBiscuit(root ed25519.PrivateKey, baseSymbols *datalog.SymbolTable, autho
 
 	proof := &pb.Proof{
 		Content: &pb.Proof_NextSecret{
-			NextSecret: nextPrivateKey.Seed(),
+			NextSecret: nextPrivateKey.Serialize(),
 		},
 	}
 
@@ -134,7 +138,7 @@ func newBiscuit(root ed25519.PrivateKey, baseSymbols *datalog.SymbolTable, autho
 	}, nil
 }
 
-func New(rng io.Reader, root ed25519.PrivateKey, baseSymbols *datalog.SymbolTable, authority *Block) (*Biscuit, error) {
+func New(rng io.Reader, root PrivateKey, baseSymbols *datalog.SymbolTable, authority *Block) (*Biscuit, error) {
 	var opts []biscuitOption
 	if rng != nil {
 		opts = []biscuitOption{WithRNG(rng)}
@@ -180,7 +184,7 @@ func (b *Biscuit) Append(rng io.Reader, block *Block) (*Biscuit, error) {
 	symbols := b.symbols.Clone()
 	symbols.Extend(block.symbols)
 
-	nextPublicKey, nextPrivateKey, _ := ed25519.GenerateKey(rng)
+	nextPublicKey, nextPrivateKey, _ := NewEd25519KeyPair(rng)
 
 	// serialize and sign the new block
 	protoBlock, err := tokenBlockToProtoBlock(block)
@@ -196,12 +200,12 @@ func (b *Biscuit) Append(rng io.Reader, block *Block) (*Biscuit, error) {
 	toSignAlgorithm := make([]byte, 4)
 	binary.LittleEndian.PutUint32(toSignAlgorithm[0:], uint32(pb.PublicKey_Ed25519))
 	toSign := append(marshalledBlock[:], toSignAlgorithm...)
-	toSign = append(toSign, nextPublicKey[:]...)
+	toSign = append(toSign, nextPublicKey.Serialize()...)
 
 	signature := ed25519.Sign(privateKey, toSign)
 	nextKey := &pb.PublicKey{
 		Algorithm: &algorithm,
-		Key:       nextPublicKey,
+		Key:       nextPublicKey.Serialize(),
 	}
 
 	signedBlock := &pb.SignedBlock{
@@ -212,7 +216,7 @@ func (b *Biscuit) Append(rng io.Reader, block *Block) (*Biscuit, error) {
 
 	proof := &pb.Proof{
 		Content: &pb.Proof_NextSecret{
-			NextSecret: nextPrivateKey.Seed(),
+			NextSecret: nextPrivateKey.Serialize(),
 		},
 	}
 
@@ -238,16 +242,19 @@ func (b *Biscuit) Seal(rng io.Reader) (*Biscuit, error) {
 		return nil, errors.New("biscuit: token is already sealed")
 	}
 
-	privateKey := b.container.Proof.GetNextSecret()
-	if privateKey == nil {
+	privateKeyData := b.container.Proof.GetNextSecret()
+	if privateKeyData == nil {
 		return nil, errors.New("biscuit: token is already sealed")
 	}
 
-	if len(privateKey) != 32 {
+	if len(privateKeyData) != 32 {
 		return nil, ErrInvalidKeySize
 	}
 
-	privateKey = ed25519.NewKeyFromSeed(privateKey)
+	privateKey, err := Ed25519PrivateKeyDeserialize(privateKeyData)
+	if err != nil {
+		return nil, err
+	}
 
 	// clone biscuit fields and append new block
 	authority := new(Block)
@@ -272,7 +279,10 @@ func (b *Biscuit) Seal(rng io.Reader) (*Biscuit, error) {
 	toSign = append(toSign, lastBlock.NextKey.Key[:]...)
 	toSign = append(toSign, lastBlock.Signature[:]...)
 
-	signature := ed25519.Sign(privateKey, toSign)
+	signature, err := privateKey.Sign(toSign)
+	if err != nil {
+		return nil, err
+	}
 
 	proof := &pb.Proof{
 		Content: &pb.Proof_FinalSignature{
@@ -302,14 +312,14 @@ type (
 	// corresponding public key, if any. If it doesn't recognize the ID or can't find the public
 	// key, or no ID is supplied and there is no default public key available, it should return an
 	// error satisfying errors.Is(err, ErrNoPublicKeyAvailable).
-	PublickKeyByIDProjection func(*uint32) (ed25519.PublicKey, error)
+	PublickKeyByIDProjection func(*uint32) (*PublicKey, error)
 )
 
 // WithSingularRootPublicKey supplies one public key to use as the root key with which to verify the
 // signatures on a biscuit's blocks.
-func WithSingularRootPublicKey(key ed25519.PublicKey) PublickKeyByIDProjection {
-	return func(*uint32) (ed25519.PublicKey, error) {
-		return key, nil
+func WithSingularRootPublicKey(key PublicKey) PublickKeyByIDProjection {
+	return func(*uint32) (*PublicKey, error) {
+		return &key, nil
 	}
 }
 
@@ -319,24 +329,26 @@ func WithSingularRootPublicKey(key ed25519.PublicKey) PublickKeyByIDProjection {
 // function selects the optional default key instead. If no public key is available—whether for the
 // biscuit's embedded key ID or a default key when no such ID is present—it returns
 // [ErrNoPublicKeyAvailable].
-func WithRootPublicKeys(keysByID map[uint32]ed25519.PublicKey, defaultKey *ed25519.PublicKey) PublickKeyByIDProjection {
-	return func(id *uint32) (ed25519.PublicKey, error) {
+func WithRootPublicKeys(keysByID map[uint32]PublicKey, defaultKey PublicKey) PublickKeyByIDProjection {
+	return func(id *uint32) (*PublicKey, error) {
 		if id == nil {
 			if defaultKey != nil {
-				return *defaultKey, nil
+				return &defaultKey, nil
 			}
 		} else if key, ok := keysByID[*id]; ok {
-			return key, nil
+			if key == nil {
+				return nil, ErrNoPublicKeyAvailable
+			}
+			return &key, nil
 		}
 		return nil, ErrNoPublicKeyAvailable
 	}
 }
 
-func (b *Biscuit) authorizerFor(root ed25519.PublicKey, opts ...AuthorizerOption) (Authorizer, error) {
-	currentKey := root
+func (b *Biscuit) authorizerFor(root PublicKey, opts ...AuthorizerOption) (Authorizer, error) {
 
 	// for now we only support Ed25519
-	if *b.container.Authority.NextKey.Algorithm != pb.PublicKey_Ed25519 {
+	if Algorithm(*b.container.Authority.NextKey.Algorithm) != root.Algorithm() {
 		return nil, UnsupportedAlgorithm
 	}
 
@@ -346,14 +358,13 @@ func (b *Biscuit) authorizerFor(root ed25519.PublicKey, opts ...AuthorizerOption
 	toVerify := append(b.container.Authority.Block[:], algorithm...)
 	toVerify = append(toVerify, b.container.Authority.NextKey.Key[:]...)
 
-	if ok := ed25519.Verify(currentKey, toVerify, b.container.Authority.Signature); !ok {
+	if ok := root.Verify(toVerify, b.container.Authority.Signature); !ok {
 		return nil, ErrInvalidSignature
 	}
 
-	currentKey = b.container.Authority.NextKey.Key
-	currentAlgorithm := b.container.Authority.NextKey.Algorithm
-	if len(currentKey) != 32 {
-		return nil, ErrInvalidKeySize
+	currentKey, err := Ed25519PublicKeyDeserialize(b.container.Authority.NextKey.Key)
+	if err != nil {
+		return nil, err
 	}
 
 	for _, block := range b.container.Blocks {
@@ -366,7 +377,7 @@ func (b *Biscuit) authorizerFor(root ed25519.PublicKey, opts ...AuthorizerOption
 		toVerify := append(block.Block[:], algorithm...)
 		toVerify = append(toVerify, block.NextKey.Key[:]...)
 
-		if ok := ed25519.Verify(currentKey, toVerify, block.Signature); !ok {
+		if ok := currentKey.Verify(toVerify, block.Signature); !ok {
 			return nil, ErrInvalidSignature
 		}
 
@@ -375,36 +386,45 @@ func (b *Biscuit) authorizerFor(root ed25519.PublicKey, opts ...AuthorizerOption
 			if *block.ExternalSignature.PublicKey.Algorithm != pb.PublicKey_Ed25519 {
 				return nil, UnsupportedAlgorithm
 			}
+			externalKey, err := Ed25519PublicKeyDeserialize(block.ExternalSignature.PublicKey.Key)
+			if err != nil {
+				return nil, err
+			}
 
 			// the public key that's part of the signed block is the public key used to sign
 			// the previous block
 			algorithm := make([]byte, 4)
-			binary.LittleEndian.PutUint32(algorithm[0:], uint32(currentAlgorithm.Number()))
+			binary.LittleEndian.PutUint32(algorithm[0:], uint32(externalKey.Algorithm()))
 			toVerify := append(block.Block[:], algorithm...)
-			toVerify = append(toVerify, currentKey[:]...)
+			toVerify = append(toVerify, currentKey.Serialize()...)
 
-			if ok := ed25519.Verify(block.ExternalSignature.PublicKey.Key, toVerify, block.ExternalSignature.Signature); !ok {
+			if ok := externalKey.Verify(toVerify, block.ExternalSignature.Signature); !ok {
 				return nil, ErrInvalidSignature
 			}
 		}
 
-		currentKey = block.NextKey.Key
-		currentAlgorithm = block.NextKey.Algorithm
-		if len(currentKey) != 32 {
-			return nil, ErrInvalidKeySize
+		currentKey, err = Ed25519PublicKeyDeserialize(block.NextKey.Key)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	switch {
 	case b.container.Proof.GetNextSecret() != nil:
 		{
-			privateKey := b.container.Proof.GetNextSecret()
-			if privateKey == nil {
+			privateKeyData := b.container.Proof.GetNextSecret()
+			if privateKeyData == nil {
 				return nil, errors.New("biscuit: sealed token verification not implemented")
 			}
 
-			publicKey := ed25519.NewKeyFromSeed(privateKey).Public()
-			if !bytes.Equal(currentKey, publicKey.(ed25519.PublicKey)) {
+			privateKey, err := Ed25519PrivateKeyDeserialize(privateKeyData)
+			if err != nil {
+				return nil, err
+			}
+
+			publicKey := privateKey.PublicKey()
+
+			if !bytes.Equal(currentKey.Serialize(), publicKey.Serialize()) {
 				return nil, errors.New("biscuit: invalid last signature")
 			}
 		}
@@ -424,7 +444,7 @@ func (b *Biscuit) authorizerFor(root ed25519.PublicKey, opts ...AuthorizerOption
 			toVerify = append(toVerify, lastBlock.NextKey.Key[:]...)
 			toVerify = append(toVerify, lastBlock.Signature[:]...)
 
-			if ok := ed25519.Verify(currentKey, toVerify, signature); !ok {
+			if ok := currentKey.Verify(toVerify, signature); !ok {
 				return nil, errors.New("biscuit: invalid last signature")
 			}
 		}
@@ -447,10 +467,8 @@ func (b *Biscuit) AuthorizerFor(keySource PublickKeyByIDProjection, opts ...Auth
 	if err != nil {
 		return nil, fmt.Errorf("choosing root public key: %w", err)
 	}
-	if len(rootPublicKey) == 0 {
-		return nil, ErrNoPublicKeyAvailable
-	}
-	return b.authorizerFor(rootPublicKey, opts...)
+
+	return b.authorizerFor(*rootPublicKey, opts...)
 }
 
 // TODO: Add "Deprecated" note to the "(*Biscuit).Authorizer" method, recommending use of
@@ -459,7 +477,7 @@ func (b *Biscuit) AuthorizerFor(keySource PublickKeyByIDProjection, opts ...Auth
 
 // Authorizer checks the signature and creates an [Authorizer]. The Authorizer can then test the
 // authorizaion policies and accept or refuse the request.
-func (b *Biscuit) Authorizer(root ed25519.PublicKey, opts ...AuthorizerOption) (Authorizer, error) {
+func (b *Biscuit) Authorizer(root PublicKey, opts ...AuthorizerOption) (Authorizer, error) {
 	return b.authorizerFor(root)
 }
 
