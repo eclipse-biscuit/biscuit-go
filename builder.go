@@ -36,7 +36,7 @@ type builderOptions struct {
 
 	symbolsStart int
 	symbols      *datalog.SymbolTable
-	facts        *datalog.FactSet
+	facts        []datalog.Fact
 	rules        []datalog.Rule
 	checks       []datalog.Check
 	context      string
@@ -65,7 +65,6 @@ func NewBuilder(root PrivateKey, opts ...builderOption) Builder {
 		rootKey:      root,
 		symbols:      defaultSymbolTable.Clone(),
 		symbolsStart: defaultSymbolTable.Len(),
-		facts:        new(datalog.FactSet),
 	}
 
 	for _, o := range opts {
@@ -99,9 +98,7 @@ func (b *builderOptions) AddBlock(block ParsedBlock) error {
 
 func (b *builderOptions) AddAuthorityFact(fact Fact) error {
 	dlFact := fact.convert(b.symbols)
-	if !b.facts.Insert(dlFact) {
-		return ErrDuplicateFact
-	}
+	b.facts = append(b.facts, dlFact)
 
 	return nil
 }
@@ -297,7 +294,7 @@ type BlockBuilder interface {
 type blockBuilder struct {
 	symbolsStart int
 	symbols      *datalog.SymbolTable
-	facts        *datalog.FactSet
+	facts        []datalog.Fact
 	rules        []datalog.Rule
 	checks       []datalog.Check
 	context      string
@@ -309,7 +306,6 @@ func NewBlockBuilder(baseSymbols *datalog.SymbolTable) BlockBuilder {
 	return &blockBuilder{
 		symbolsStart: baseSymbols.Len(),
 		symbols:      baseSymbols,
-		facts:        new(datalog.FactSet),
 	}
 }
 
@@ -338,9 +334,7 @@ func (b *blockBuilder) AddBlock(block ParsedBlock) error {
 
 func (b *blockBuilder) AddFact(fact Fact) error {
 	dlFact := fact.convert(b.symbols)
-	if !b.facts.Insert(dlFact) {
-		return ErrDuplicateFact
-	}
+	b.facts = append(b.facts, dlFact)
 
 	return nil
 }
@@ -366,8 +360,8 @@ func (b *blockBuilder) SetContext(context string) {
 func (b *blockBuilder) Build() *Block {
 	b.symbols = b.symbols.SplitOff(b.symbolsStart)
 
-	facts := make(datalog.FactSet, len(*b.facts))
-	copy(facts, *b.facts)
+	facts := make([]datalog.Fact, len(b.facts))
+	copy(facts, b.facts)
 
 	rules := make([]datalog.Rule, len(b.rules))
 	copy(rules, b.rules)
@@ -377,7 +371,7 @@ func (b *blockBuilder) Build() *Block {
 
 	return &Block{
 		symbols: b.symbols.Clone(),
-		facts:   &facts,
+		facts:   facts,
 		rules:   rules,
 		checks:  checks,
 		context: b.context,

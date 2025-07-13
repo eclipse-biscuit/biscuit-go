@@ -22,9 +22,10 @@ var defaultSymbolTable = &datalog.SymbolTable{}
 
 type Block struct {
 	symbols *datalog.SymbolTable
-	facts   *datalog.FactSet
+	facts   []datalog.Fact
 	rules   []datalog.Rule
 	checks  []datalog.Check
+	scopes  []datalog.Scope
 	context string
 	version uint32
 }
@@ -33,8 +34,8 @@ func (b *Block) Code(symbols *datalog.SymbolTable) string {
 	debug := &datalog.SymbolDebugger{
 		SymbolTable: symbols,
 	}
-	facts := make([]string, len(*b.facts))
-	for i, f := range *b.facts {
+	facts := make([]string, len(b.facts))
+	for i, f := range b.facts {
 		facts[i] = debug.Predicate(f.Predicate)
 	}
 	rules := make([]string, len(b.rules))
@@ -51,16 +52,22 @@ func (b *Block) Code(symbols *datalog.SymbolTable) string {
 		%v
 		%s
 		%s
+		scopes: %v
 	}`,
 		strings.Join(facts, ";\n"),
 		strings.Join(rules, ";\n"),
 		strings.Join(checks, ";\n"),
+		b.scopes,
 	)
 }
 
 func (b *Block) String(symbols *datalog.SymbolTable) string {
 	debug := &datalog.SymbolDebugger{
 		SymbolTable: symbols,
+	}
+	facts := make([]string, len(b.facts))
+	for i, f := range b.facts {
+		facts[i] = debug.Predicate(f.Predicate)
 	}
 	rules := make([]string, len(b.rules))
 	for i, r := range b.rules {
@@ -82,7 +89,7 @@ func (b *Block) String(symbols *datalog.SymbolTable) string {
 	}`,
 		*b.symbols,
 		b.context,
-		debug.FactSet(b.facts),
+		facts,
 		rules,
 		strings.Join(checks, ", "),
 		b.version,
@@ -172,7 +179,7 @@ func fromDatalogID(symbols *datalog.SymbolTable, id datalog.Term) (Term, error) 
 	case datalog.TermTypeBool:
 		a = Bool(id.(datalog.Bool))
 	case datalog.TermTypeSet:
-		setIDs := id.(datalog.Set)
+		setIDs := id.(datalog.TermSet)
 		set := make(Set, 0, len(setIDs))
 		for _, i := range setIDs {
 			setTerm, err := fromDatalogID(symbols, i)
@@ -193,7 +200,7 @@ type Rule struct {
 	Head        Predicate
 	Body        []Predicate
 	Expressions []Expression
-	Scopes      []Scope
+	Scopes      []datalog.Scope
 }
 
 func (r Rule) convert(symbols *datalog.SymbolTable) datalog.Rule {
@@ -206,10 +213,17 @@ func (r Rule) convert(symbols *datalog.SymbolTable) datalog.Rule {
 	for i, e := range r.Expressions {
 		dlExpressions[i] = e.convert(symbols)
 	}
+
+	scopes := make([]datalog.Scope, len(r.Scopes))
+	for i, scope := range r.Scopes {
+		scopes[i] = scope
+	}
+
 	return datalog.Rule{
-		Head:        r.Head.convert(symbols),
-		Body:        dlBody,
-		Expressions: dlExpressions,
+		Head:          r.Head.convert(symbols),
+		Body:          dlBody,
+		Expressions:   dlExpressions,
+		TrustedScopes: scopes,
 	}
 }
 
@@ -237,10 +251,16 @@ func fromDatalogRule(symbols *datalog.SymbolTable, dlRule datalog.Rule) (*Rule, 
 		expressions[i] = expr
 	}
 
+	scopes := make([]datalog.Scope, len(dlRule.TrustedScopes))
+	for i, scope := range dlRule.TrustedScopes {
+		scopes[i] = scope
+	}
+
 	return &Rule{
 		Head:        *head,
 		Body:        body,
 		Expressions: expressions,
+		Scopes:      scopes,
 	}, nil
 }
 
@@ -589,7 +609,7 @@ type Set []Term
 
 func (a Set) Type() TermType { return TermTypeSet }
 func (a Set) convert(symbols *datalog.SymbolTable) datalog.Term {
-	datalogSet := make(datalog.Set, 0, len(a))
+	datalogSet := make(datalog.TermSet, 0, len(a))
 	for _, e := range a {
 		datalogSet = append(datalogSet, e.convert(symbols))
 	}

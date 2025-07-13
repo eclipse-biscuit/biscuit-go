@@ -20,9 +20,9 @@ func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 
 	facts := input.facts
 	if facts != nil {
-		out.Facts = make([]*pb.Fact, len(*facts))
+		out.Facts = make([]*pb.Fact, len(facts))
 		var err error
-		for i, fact := range *facts {
+		for i, fact := range facts {
 			out.Facts[i], err = tokenFactToProtoFact(fact)
 			if err != nil {
 				return nil, err
@@ -60,7 +60,7 @@ func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
 	symbols := datalog.SymbolTable{Symbols: input.Symbols}
 
-	var facts datalog.FactSet
+	var facts []datalog.Fact
 	var rules []datalog.Rule
 	var checks []datalog.Check
 
@@ -81,7 +81,7 @@ func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
 
 	switch input.GetVersion() {
 	case 3:
-		facts = make(datalog.FactSet, len(input.Facts))
+		facts = make([]datalog.Fact, len(input.Facts))
 		rules = make([]datalog.Rule, len(input.Rules))
 		checks = make([]datalog.Check, len(input.Checks))
 
@@ -114,7 +114,7 @@ func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
 
 	return &Block{
 		symbols: &symbols,
-		facts:   &facts,
+		facts:   facts,
 		rules:   rules,
 		checks:  checks,
 		context: input.GetContext(),

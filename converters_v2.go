@@ -96,7 +96,7 @@ func tokenTermToProtoTerm(input datalog.Term) (*pb.Term, error) {
 			Content: &pb.Term_Bool{Bool: bool(input.(datalog.Bool))},
 		}
 	case datalog.TermTypeSet:
-		datalogSet := input.(datalog.Set)
+		datalogSet := input.(datalog.TermSet)
 		if len(datalogSet) == 0 {
 			return nil, errors.New("biscuit: failed to convert token ID to proto ID: set cannot be empty")
 		}
@@ -168,7 +168,7 @@ func protoTermToTokenTerm(input *pb.Term) (*datalog.Term, error) {
 			return nil, errors.New("biscuit: failed to convert proto ID to token ID: set cannot contains other sets")
 		}
 
-		datalogSet := make(datalog.Set, 0, len(elts))
+		datalogSet := make(datalog.TermSet, 0, len(elts))
 		for _, protoElt := range elts {
 			if eltType := reflect.TypeOf(protoElt.GetContent()); eltType != expectedEltType {
 				return nil, fmt.Errorf(

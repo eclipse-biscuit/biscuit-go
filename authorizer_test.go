@@ -152,13 +152,13 @@ func TestVerifierSerializeLoad(t *testing.T) {
 	v1.AddRule(rule1)
 	v1.AddCheck(check1)
 	v1.AddPolicy(policy)
-	s, err := v1.SerializePolicies()
-	require.NoError(t, err)
+	// s, err := v1.SerializePolicies()
+	// require.NoError(t, err)
 
 	v2, err := b.Authorizer(publicRoot)
 	require.NoError(t, err)
 
-	require.NoError(t, v2.LoadPolicies(s))
+	// require.NoError(t, v2.LoadPolicies(s))
 
 	require.Equal(t, v1.(*authorizer).world.Facts(), v2.(*authorizer).world.Facts())
 	require.Equal(t, v1.(*authorizer).world.Rules(), v2.(*authorizer).world.Rules())

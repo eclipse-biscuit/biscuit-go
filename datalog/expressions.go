@@ -253,7 +253,7 @@ func (Length) Eval(value Term, symbols *SymbolTable) (Term, error) {
 	case TermTypeBytes:
 		out = Integer(len(value.(Bytes)))
 	case TermTypeSet:
-		out = Integer(len(value.(Set)))
+		out = Integer(len(value.(TermSet)))
 	default:
 		return nil, fmt.Errorf("datalog: unexpected Length value type: %d", value.Type())
 	}
@@ -500,12 +500,12 @@ func (Contains) Eval(left Term, right Term, symbols *SymbolTable) (Term, error) 
 		return nil, fmt.Errorf("datalog: unexpected Contains right value type: %d", right.Type())
 	}
 
-	set, ok := left.(Set)
+	set, ok := left.(TermSet)
 	if !ok {
 		return nil, errors.New("datalog: Contains left value must be a Set")
 	}
 
-	rhsset, ok := right.(Set)
+	rhsset, ok := right.(TermSet)
 
 	if ok {
 		for _, rhselt := range rhsset {
@@ -538,12 +538,12 @@ func (Intersection) Type() BinaryOpType {
 	return BinaryIntersection
 }
 func (Intersection) Eval(left Term, right Term, _ *SymbolTable) (Term, error) {
-	set, ok := left.(Set)
+	set, ok := left.(TermSet)
 	if !ok {
 		return nil, errors.New("datalog: Intersection left value must be a Set")
 	}
 
-	set2, ok := right.(Set)
+	set2, ok := right.(TermSet)
 	if !ok {
 		return nil, errors.New("datalog: Intersection rightt value must be a Set")
 	}
@@ -558,12 +558,12 @@ func (Union) Type() BinaryOpType {
 	return BinaryUnion
 }
 func (Union) Eval(left Term, right Term, _ *SymbolTable) (Term, error) {
-	set, ok := left.(Set)
+	set, ok := left.(TermSet)
 	if !ok {
 		return nil, errors.New("datalog: Union left value must be a Set")
 	}
 
-	set2, ok := right.(Set)
+	set2, ok := right.(TermSet)
 	if !ok {
 		return nil, errors.New("datalog: Union rightt value must be a Set")
 	}

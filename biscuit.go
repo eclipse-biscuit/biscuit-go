@@ -504,30 +504,30 @@ func (b *Biscuit) Serialize() ([]byte, error) {
 
 var ErrFactNotFound = errors.New("biscuit: fact not found")
 
-// GetBlockID returns the first block index containing a fact
-// starting from the authority block and then each block in the order they were added.
-// ErrFactNotFound is returned when no block contains the fact.
-func (b *Biscuit) GetBlockID(fact Fact) (int, error) {
-	// don't store symbols from searched fact in the verifier table
-	symbols := b.symbols.Clone()
-	datalogFact := fact.Predicate.convert(symbols)
+// // GetBlockID returns the first block index containing a fact
+// // starting from the authority block and then each block in the order they were added.
+// // ErrFactNotFound is returned when no block contains the fact.
+// func (b *Biscuit) GetBlockID(fact Fact) (int, error) {
+// 	// don't store symbols from searched fact in the verifier table
+// 	symbols := b.symbols.Clone()
+// 	datalogFact := fact.Predicate.convert(symbols)
 
-	for _, f := range *b.authority.facts {
-		if f.Equal(datalogFact) {
-			return 0, nil
-		}
-	}
+// 	for _, f := range *b.authority.facts {
+// 		if f.Equal(datalogFact) {
+// 			return 0, nil
+// 		}
+// 	}
 
-	for i, b := range b.blocks {
-		for _, f := range *b.facts {
-			if f.Equal(datalogFact) {
-				return i + 1, nil
-			}
-		}
-	}
+// 	for i, b := range b.blocks {
+// 		for _, f := range *b.facts {
+// 			if f.Equal(datalogFact) {
+// 				return i + 1, nil
+// 			}
+// 		}
+// 	}
 
-	return 0, ErrFactNotFound
-}
+// 	return 0, ErrFactNotFound
+// }
 
 /*
 // SHA256Sum returns a hash of `count` biscuit blocks + the authority block
@@ -609,33 +609,35 @@ func (b *Biscuit) checkRootKey(root ed25519.PublicKey) error {
 	return nil
 }*/
 
-func (b *Biscuit) generateWorld(symbols *datalog.SymbolTable) (*datalog.World, error) {
-	world := datalog.NewWorld()
+// func (b *Biscuit) generateWorld(symbols *datalog.SymbolTable) (*datalog.World, error) {
+// 	world := datalog.NewWorld()
 
-	for _, fact := range *b.authority.facts {
-		world.AddFact(fact)
-	}
+// 	authorityOrigin := datalog.AuthorityOrigin()
+// 	for _, fact := range b.authority.facts {
+// 		world.AddFact(authorityOrigin, fact)
+// 	}
 
-	for _, rule := range b.authority.rules {
-		world.AddRule(rule)
-	}
+// 	for _, rule := range b.authority.rules {
+// 		world.AddRule(0, rule)
+// 	}
 
-	for _, block := range b.blocks {
-		for _, fact := range *block.facts {
-			world.AddFact(fact)
-		}
+// 	for index, block := range b.blocks {
+// 		blockOrigin := datalog.MakeOrigin([]uint64{uint64(index + 1)})
+// 		for _, fact := range block.facts {
+// 			world.AddFact(blockOrigin, fact)
+// 		}
 
-		for _, rule := range block.rules {
-			world.AddRule(rule)
-		}
-	}
+// 		for _, rule := range block.rules {
+// 			world.AddRule(datalog.SingleOrigin(index+1), rule)
+// 		}
+// 	}
 
-	if err := world.Run(symbols); err != nil {
-		return nil, err
-	}
+// 	if err := world.Run(symbols); err != nil {
+// 		return nil, err
+// 	}
 
-	return world, nil
-}
+// 	return world, nil
+// }
 
 func (b *Biscuit) RevocationIds() [][]byte {
 	result := make([][]byte, 0, len(b.blocks)+1)

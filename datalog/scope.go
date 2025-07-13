@@ -28,7 +28,7 @@ func (PreviousScope) Type() ScopeType {
 }
 
 type PublicKeyScope struct {
-	ID uint32
+	ID uint64
 }
 
 func (PublicKeyScope) Type() ScopeType {

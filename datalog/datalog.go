@@ -32,11 +32,11 @@ type Term interface {
 	String() string
 }
 
-type Set []Term
+type TermSet []Term
 
-func (Set) Type() TermType { return TermTypeSet }
-func (s Set) Equal(t Term) bool {
-	c, ok := t.(Set)
+func (TermSet) Type() TermType { return TermTypeSet }
+func (s TermSet) Equal(t Term) bool {
+	c, ok := t.(TermSet)
 	if !ok || len(c) != len(s) {
 		return false
 	}
@@ -53,7 +53,7 @@ func (s Set) Equal(t Term) bool {
 	}
 	return true
 }
-func (s Set) String() string {
+func (s TermSet) String() string {
 	eltStr := make([]string, 0, len(s))
 	for _, e := range s {
 		eltStr = append(eltStr, e.String())
@@ -61,13 +61,13 @@ func (s Set) String() string {
 	sort.Strings(eltStr)
 	return fmt.Sprintf("[%s]", strings.Join(eltStr, ", "))
 }
-func (s Set) Intersect(t Set) Set {
+func (s TermSet) Intersect(t TermSet) TermSet {
 	other := make(map[Term]struct{}, len(t))
 	for _, v := range t {
 		other[v] = struct{}{}
 	}
 
-	result := Set{}
+	result := TermSet{}
 
 	for _, id := range s {
 		if _, ok := other[id]; ok {
@@ -76,13 +76,13 @@ func (s Set) Intersect(t Set) Set {
 	}
 	return result
 }
-func (s Set) Union(t Set) Set {
+func (s TermSet) Union(t TermSet) TermSet {
 	this := make(map[Term]struct{}, len(s))
 	for _, v := range s {
 		this[v] = struct{}{}
 	}
 
-	result := Set{}
+	result := TermSet{}
 	result = append(result, s...)
 
 	for _, id := range t {
@@ -188,10 +188,10 @@ type Fact struct {
 }
 
 type Rule struct {
-	Head        Predicate
-	Body        []Predicate
-	Expressions []Expression
-	Scopes      []Scope
+	Head          Predicate
+	Body          []Predicate
+	Expressions   []Expression
+	TrustedScopes []Scope
 }
 
 type InvalidRuleError struct {
@@ -203,7 +203,8 @@ func (e InvalidRuleError) Error() string {
 	return fmt.Sprintf("datalog: variable %d in head is missing from body and/or constraints", e.MissingVariable)
 }
 
-func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error {
+func (r Rule) Apply(ruleOrigin uint64, factsIterator *FactIterator, newFacts *OriginFacts, syms *SymbolTable) error {
+
 	// extract all variables from the rule body
 	variables := make(MatchedVariables)
 	for _, predicate := range r.Body {
@@ -216,11 +217,28 @@ func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error 
 		}
 	}
 
-	combinations := combine(variables, r.Body, r.Expressions, facts, syms)
+	combinations := combine(variables, r.Body, factsIterator, syms)
 
 	for res := range combinations {
+
 		if res.error != nil {
 			return res.error
+		}
+
+		valid := true
+		for _, e := range r.Expressions {
+			res, err := e.Evaluate(res.MatchedVariables, syms)
+			if err != nil {
+				return err
+			}
+			if !res.Equal(Bool(true)) {
+				valid = false
+				break
+			}
+		}
+
+		if !valid {
+			continue
 		}
 
 		predicate := r.Head.Clone()
@@ -236,7 +254,7 @@ func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error 
 
 			predicate.Terms[i] = *v
 		}
-		newFacts.Insert(Fact{predicate})
+		newFacts.Insert(res.Origin, Fact{predicate})
 	}
 
 	return nil
@@ -244,43 +262,6 @@ func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error 
 
 type Check struct {
 	Queries []Rule
-}
-
-type FactSet []Fact
-
-func (s *FactSet) Insert(f Fact) bool {
-	for _, v := range *s {
-		if v.Equal(f.Predicate) {
-			return false
-		}
-	}
-	*s = append(*s, f)
-	return true
-}
-
-func (s *FactSet) InsertAll(facts []Fact) {
-	for _, f := range facts {
-		s.Insert(f)
-	}
-}
-
-func (s *FactSet) Equal(x *FactSet) bool {
-	if len(*s) != len(*x) {
-		return false
-	}
-	for _, f1 := range *x {
-		found := false
-		for _, f2 := range *s {
-			if f1.Predicate.Equal(f2.Predicate) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
 }
 
 type runLimits struct {
@@ -322,15 +303,15 @@ func WithMaxDuration(maxDuration time.Duration) WorldOption {
 }
 
 type World struct {
-	facts *FactSet
-	rules []Rule
+	facts *OriginFacts
+	rules OriginRules
 
 	runLimits runLimits
 }
 
 func NewWorld(opts ...WorldOption) *World {
 	w := &World{
-		facts:     &FactSet{},
+		facts:     &OriginFacts{},
 		runLimits: defaultRunLimits,
 	}
 
@@ -341,23 +322,23 @@ func NewWorld(opts ...WorldOption) *World {
 	return w
 }
 
-func (w *World) AddFact(f Fact) {
-	w.facts.Insert(f)
+func (w *World) AddFact(origin Origin, f Fact) {
+	w.facts.Insert(origin, f)
 }
 
-func (w *World) Facts() *FactSet {
+func (w *World) Facts() *OriginFacts {
 	return w.facts
 }
 
-func (w *World) AddRule(r Rule) {
-	w.rules = append(w.rules, r)
+func (w *World) AddRule(ruleOrigin uint64, scopes TrustedOrigin, r Rule) {
+	w.rules.Insert(ruleOrigin, scopes, r)
 }
 
 func (w *World) ResetRules() {
-	w.rules = make([]Rule, 0)
+	w.rules = OriginRules{}
 }
 
-func (w *World) Rules() []Rule {
+func (w *World) Rules() OriginRules {
 	return w.rules
 }
 
@@ -372,23 +353,25 @@ func (w *World) Run(syms *SymbolTable) error {
 			case <-ctx.Done():
 				return
 			default:
-				var newFacts FactSet
-				for _, r := range w.rules {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						if err := r.Apply(w.facts, &newFacts, syms); err != nil {
-							done <- err
+				var newFacts OriginFacts
+				for _, o := range w.rules {
+					for _, r := range o.Rules {
+						select {
+						case <-ctx.Done():
 							return
+						default:
+							factsIterator := w.facts.Iterator(o.TrustedOrigin)
+							if err := r.Rule.Apply(r.Origin, &factsIterator, &newFacts, syms); err != nil {
+								done <- err
+								return
+							}
 						}
 					}
 				}
 
-				prevCount := len(*w.facts)
-				w.facts.InsertAll([]Fact(newFacts))
-
-				newCount := len(*w.facts)
+				prevCount := w.facts.Len()
+				w.facts.Merge(newFacts)
+				newCount := w.facts.Len()
 				if newCount >= w.runLimits.maxFacts {
 					done <- ErrWorldRunLimitMaxFacts
 					return
@@ -412,18 +395,21 @@ func (w *World) Run(syms *SymbolTable) error {
 	}
 }
 
-func (w *World) QueryRule(rule Rule, syms *SymbolTable) *FactSet {
-	newFacts := &FactSet{}
-	rule.Apply(w.facts, newFacts, syms)
+func (w *World) QueryRule(ruleOrigin uint64, scopes TrustedOrigin, rule Rule, syms *SymbolTable) *OriginFacts {
+	newFacts := &OriginFacts{}
+	factsIterator := w.facts.Iterator(scopes)
+	rule.Apply(ruleOrigin, &factsIterator, newFacts, syms)
 	return newFacts
 }
 
 func (w *World) Clone() *World {
-	newFacts := new(FactSet)
+	newFacts := new(OriginFacts)
 	*newFacts = *w.facts
+	newRules := make(OriginRules, len(w.rules))
+	copy(newRules, w.rules)
 	return &World{
 		facts:     newFacts,
-		rules:     append([]Rule{}, w.rules...),
+		rules:     newRules,
 		runLimits: w.runLimits,
 	}
 }
@@ -456,148 +442,83 @@ func (m MatchedVariables) Clone() MatchedVariables {
 	return res
 }
 
-func combine(variables MatchedVariables, predicates []Predicate, expressions []Expression, facts *FactSet, syms *SymbolTable) <-chan struct {
+func combine(variables MatchedVariables, predicates []Predicate, facts *FactIterator, syms *SymbolTable) <-chan struct {
+	Origin
 	MatchedVariables
 	error
 } {
 	c := make(chan struct {
+		Origin
 		MatchedVariables
 		error
 	})
 
 	go func(c chan struct {
+		Origin
 		MatchedVariables
 		error
 	}) {
 		defer close(c)
 
-		current := 0
-		indexes := make([]int, len(predicates))
-		//fmt.Printf("combine variables %+v preds %+v exp %+v facts %+v indexes %+v\n", variables, predicates, expressions, *facts, indexes)
-
-		// cannot apply a rule on an empty list of facts
-		if len(predicates) > 0 && len(*facts) == 0 {
+		if len(predicates) == 0 {
+			if variables.Complete() != nil {
+				c <- struct {
+					Origin
+					MatchedVariables
+					error
+				}{[]uint64{}, variables, nil}
+			}
 			return
 		}
 
-		// main loop
-		for {
-			if len(predicates) > 0 && len(*facts) > 0 {
-				// look for the next matching set of facts
-				// current indicates which predicate we are looking at, and indexes contains
-				// a list of indexes in the facts list, for each predicate
-				// when we are done looking at a set of facts, the last index is incremented
-				// and if that one reached the max number of facts, the previous one, etc
-				for {
-					if (*facts)[indexes[current]].Match(predicates[current]) {
-						if current == len(predicates)-1 {
-							// extract and check variables, check expressions, send variables
-							break
-						} else {
-							current += 1
-						}
-					} else {
-						// did not match, we either increase the current index or the previous one
-						// then we check again for a match
-						if !advanceIndexes(&current, &indexes, facts) {
-							return
-						}
-					}
-				}
-			}
+		currentFacts := facts.makeIterator()
+	Facts:
+		for fact := range currentFacts {
+			if fact.Match(predicates[0]) {
+				vars := variables.Clone()
 
-			// extract and check variables, check expressions, send variables
-			var vars = variables.Clone()
-			var matching = true
-
-		match:
-			for i, pred := range predicates {
-				fact := (*facts)[indexes[i]]
-				//fmt.Printf("evaluating predicate(%d) %+v with fact %+v\n", i, pred, fact)
-
-				for j := 0; j < len(pred.Terms); j++ {
-					term := pred.Terms[j]
+				for j := 0; j < len(predicates[0].Terms); j++ {
+					term := predicates[0].Terms[j]
 					k, ok := term.(Variable)
 					if !ok {
 						continue
 					}
 					v := fact.Predicate.Terms[j]
 					if !vars.Insert(k, v) {
-						matching = false
-						break match
+						continue Facts
 					}
-
 				}
-			}
 
-			//fmt.Printf("evaluating indexes %+v with extracted variables %+v, matching = %+v\n", indexes, variables, matching)
-			if matching {
-				if complete_vars := vars.Complete(); complete_vars != nil {
-					//fmt.Printf("variables are complete, evaluating expressions\n")
-					valid := true
-					for _, e := range expressions {
-						res, err := e.Evaluate(complete_vars, syms)
-						if err != nil {
-							fmt.Printf("expression error: %+v", err)
-							c <- struct {
-								MatchedVariables
-								error
-							}{complete_vars, err}
-
-							return
-						}
-						if !res.Equal(Bool(true)) {
-							valid = false
-							break
-						}
-					}
-
-					if valid {
-						//fmt.Printf("sending valid variables %+v\n", complete_vars)
+				if len(predicates) == 1 {
+					if vars.Complete() != nil {
 						c <- struct {
+							Origin
 							MatchedVariables
 							error
-						}{complete_vars, nil}
+						}{fact.Origin, vars, nil}
 					}
 				} else {
-					// if all predicates match but variables are not complete, it means
-					// variables appearing in the head do not appear in the body,
-					// so we should stop here because there's no way to get a correct match
-					return
+					currentOrigin := fact.Origin
+					for res := range combine(vars, predicates[1:], facts, syms) {
+						if res.error != nil {
+							c <- struct {
+								Origin
+								MatchedVariables
+								error
+							}{nil, nil, res.error}
+							return
+						}
+
+						newOrigin := currentOrigin.Merge(res.Origin)
+						c <- struct {
+							Origin
+							MatchedVariables
+							error
+						}{newOrigin, res.MatchedVariables, res.error}
+					}
 				}
 			}
-
-			// this was a rule or check with expressions but no predicates, no need to
-			// update the indexes, an single execution is enough
-			if len(predicates) == 0 {
-				return
-			}
-
-			// next index
-			if !advanceIndexes(&current, &indexes, facts) {
-				return
-			}
 		}
-
 	}(c)
 	return c
-}
-
-func advanceIndexes(current *int, indexes *[]int, facts *FactSet) bool {
-	for i := *current; i >= 0; i-- {
-		if (*indexes)[i] < len(*facts)-1 {
-			(*indexes)[i] += 1
-			break
-		} else {
-			if i > 0 {
-				(*indexes)[i] = 0
-				*current -= 1
-			} else {
-				// we reached the first predicate, we cannot generate more
-				// combinations, so we stop the task
-				return false
-			}
-		}
-	}
-	return true
 }

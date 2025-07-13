@@ -27,7 +27,7 @@ func TestFromDatalogFact(t *testing.T) {
 				datalog.Bytes([]byte("some random bytes")),
 				datalog.Bool(true),
 				datalog.Bool(false),
-				datalog.Set{
+				datalog.TermSet{
 					symbolTable.Insert("abc"),
 					datalog.Integer(42),
 					datalog.String(datalog.OFFSET + 1),

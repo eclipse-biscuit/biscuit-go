@@ -131,7 +131,7 @@ func TestExpressionConvert(t *testing.T) {
 		{
 			Desc: "int comparison in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.Integer(1), datalog.Integer(2), datalog.Integer(3)}},
+				datalog.Value{ID: datalog.TermSet{datalog.Integer(1), datalog.Integer(2), datalog.Integer(3)}},
 				datalog.Value{ID: datalog.Variable(8)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 			},
@@ -150,7 +150,7 @@ func TestExpressionConvert(t *testing.T) {
 		{
 			Desc: "int comparison not in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.Integer(1), datalog.Integer(2), datalog.Integer(3)}},
+				datalog.Value{ID: datalog.TermSet{datalog.Integer(1), datalog.Integer(2), datalog.Integer(3)}},
 				datalog.Value{ID: datalog.Variable(9)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 				datalog.UnaryOp{UnaryOpFunc: datalog.Negate{}},
@@ -217,7 +217,7 @@ func TestExpressionConvert(t *testing.T) {
 		{
 			Desc: "string comparison in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")}},
+				datalog.Value{ID: datalog.TermSet{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")}},
 				datalog.Value{ID: datalog.Variable(13)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 			},
@@ -236,7 +236,7 @@ func TestExpressionConvert(t *testing.T) {
 		{
 			Desc: "string comparison not in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")}},
+				datalog.Value{ID: datalog.TermSet{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")}},
 				datalog.Value{ID: datalog.Variable(14)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 				datalog.UnaryOp{UnaryOpFunc: datalog.Negate{}},
@@ -287,7 +287,7 @@ func TestExpressionConvert(t *testing.T) {
 		{
 			Desc: "bytes in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.Bytes("a"), datalog.Bytes("b"), datalog.Bytes("c")}},
+				datalog.Value{ID: datalog.TermSet{datalog.Bytes("a"), datalog.Bytes("b"), datalog.Bytes("c")}},
 				datalog.Value{ID: datalog.Variable(17)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 			},
@@ -306,7 +306,7 @@ func TestExpressionConvert(t *testing.T) {
 		{
 			Desc: "bytes not in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.Bytes("a"), datalog.Bytes("b"), datalog.Bytes("c")}},
+				datalog.Value{ID: datalog.TermSet{datalog.Bytes("a"), datalog.Bytes("b"), datalog.Bytes("c")}},
 				datalog.Value{ID: datalog.Variable(18)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 				datalog.UnaryOp{UnaryOpFunc: datalog.Negate{}},
@@ -327,7 +327,7 @@ func TestExpressionConvert(t *testing.T) {
 		{
 			Desc: "symbols in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.String(1), datalog.String(2), datalog.String(3)}},
+				datalog.Value{ID: datalog.TermSet{datalog.String(1), datalog.String(2), datalog.String(3)}},
 				datalog.Value{ID: datalog.Variable(19)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 			},
@@ -346,7 +346,7 @@ func TestExpressionConvert(t *testing.T) {
 		{
 			Desc: "symbols not in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.String(1), datalog.String(2), datalog.String(3)}},
+				datalog.Value{ID: datalog.TermSet{datalog.String(1), datalog.String(2), datalog.String(3)}},
 				datalog.Value{ID: datalog.Variable(20)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 				datalog.UnaryOp{UnaryOpFunc: datalog.Negate{}},
@@ -561,7 +561,7 @@ func TestFactConvert(t *testing.T) {
 			syms.Insert("abcd"),
 			datalog.Date(now.Unix()),
 			datalog.Bool(true),
-			datalog.Set{
+			datalog.TermSet{
 				syms.Insert("abc"),
 				syms.Insert("def"),
 			},
@@ -600,30 +600,30 @@ func TestConvertInvalTermsets(t *testing.T) {
 
 	tokenTestCases := []struct {
 		desc string
-		in   datalog.Set
+		in   datalog.TermSet
 	}{
 		{
 			desc: "empty set",
-			in:   datalog.Set{},
+			in:   datalog.TermSet{},
 		},
 		{
 			desc: "mixed element types",
-			in: datalog.Set{
+			in: datalog.TermSet{
 				syms.Insert("abc"),
 				datalog.Integer(1),
 			},
 		},
 		{
 			desc: "set with variables",
-			in: datalog.Set{
+			in: datalog.TermSet{
 				datalog.Variable(0),
 				datalog.Variable(1),
 			},
 		},
 		{
 			desc: "set with sub sets",
-			in: datalog.Set{
-				datalog.Set{
+			in: datalog.TermSet{
+				datalog.TermSet{
 					syms.Insert("abc"),
 					syms.Insert("def"),
 				},
@@ -725,7 +725,7 @@ func TestBlockConvert(t *testing.T) {
 
 	in := &Block{
 		symbols: &datalog.SymbolTable{Symbols: []string{"a", "b", "c", "d"}},
-		facts:   &datalog.FactSet{datalog.Fact{Predicate: predicate}},
+		facts:   []datalog.Fact{datalog.Fact{Predicate: predicate}},
 		rules:   []datalog.Rule{*rule},
 		checks:  []datalog.Check{{Queries: []datalog.Rule{*rule}}},
 		context: "context",

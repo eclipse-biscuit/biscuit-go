@@ -196,6 +196,10 @@ func (d SymbolDebugger) Predicate(p Predicate) string {
 	return fmt.Sprintf("%s(%s)", d.Str(p.Name), strings.Join(strs, ", "))
 }
 
+func (d SymbolDebugger) Fact(origin Origin, f Fact) string {
+	return fmt.Sprintf("%d: %s", origin, d.Predicate(f.Predicate))
+}
+
 func (d SymbolDebugger) Rule(r Rule) string {
 	head := d.Predicate(r.Head)
 	preds := make([]string, len(r.Body))
@@ -247,23 +251,30 @@ func (d SymbolDebugger) Check(c Check) string {
 
 func (d SymbolDebugger) World(w *World) string {
 	facts := make([]string, len(*w.facts))
-	for i, f := range *w.facts {
-		facts[i] = d.Predicate(f.Predicate)
+	for _, f := range *w.facts {
+		for _, fact := range f.Facts.Facts {
+			facts = append(facts, d.Fact(f.Origin, fact))
+		}
 	}
-	rules := make([]string, len(w.rules))
-	for i, r := range w.rules {
-		rules[i] = d.Rule(r)
+	rulesStr := make([]string, 0)
+	for _, o := range w.rules {
+		for _, r := range o.Rules {
+			rulesStr = append(rulesStr, fmt.Sprintf("%d: %s", r.Origin, d.Rule(r.Rule)))
+		}
 	}
 
 	sort.Strings(facts)
-	sort.Strings(rules)
-	return fmt.Sprintf("World {{\n\tfacts: %v\n\trules: %v\n}}", facts, rules)
+	sort.Strings(rulesStr)
+	return fmt.Sprintf("World {{\n\tfacts: %v\n\trules: %v\n}}", facts, rulesStr)
 }
 
-func (d SymbolDebugger) FactSet(s *FactSet) string {
-	strs := make([]string, len(*s))
-	for i, f := range *s {
-		strs[i] = d.Predicate(f.Predicate)
+func (d SymbolDebugger) OriginFacts(s *OriginFacts) string {
+	facts := make([]string, len(*s))
+	for _, f := range *s {
+		for _, fact := range f.Facts.Facts {
+			facts = append(facts, d.Fact(f.Origin, fact))
+		}
 	}
-	return fmt.Sprintf("%v", strs)
+
+	return fmt.Sprintf("%v", facts)
 }
