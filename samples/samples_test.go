@@ -66,44 +66,25 @@ type BiscuitError struct {
 }
 
 type World struct {
-	Facts    []ScopedFact `json:"facts"`
-	Rules    []ScopedRule `json:"rules"`
-	Checks   []string     `json:"checks"`
-	Policies []string     `json:"policies"`
+	Facts    []ScopedFacts  `json:"facts"`
+	Rules    []ScopedRules  `json:"rules"`
+	Checks   []ScopedChecks `json:"checks"`
+	Policies []string       `json:"policies"`
 }
 
-type ScopedFact struct {
-	Fact  string
-	Scope [](*int32)
+type ScopedFacts struct {
+	Facts []string    `json:"facts"`
+	Scope [](*uint64) `json:"origin"`
 }
 
-func (sf *ScopedFact) UnmarshalJSON(buf []byte) error {
-	tmp := []interface{}{&sf.Fact, &sf.Scope}
-	wantLen := len(tmp)
-	if err := json.Unmarshal(buf, &tmp); err != nil {
-		return err
-	}
-	if g, e := len(tmp), wantLen; g != e {
-		return fmt.Errorf("wrong number of fields in ScopedFact: %d != %d", g, e)
-	}
-	return nil
+type ScopedRules struct {
+	Rules []string `json:"rules"`
+	Scope *uint64  `json:"origin"`
 }
 
-type ScopedRule struct {
-	Rule  string
-	Scope *int32
-}
-
-func (sr *ScopedRule) UnmarshalJSON(buf []byte) error {
-	tmp := []interface{}{&sr.Rule, &sr.Scope}
-	wantLen := len(tmp)
-	if err := json.Unmarshal(buf, &tmp); err != nil {
-		return err
-	}
-	if g, e := len(tmp), wantLen; g != e {
-		return fmt.Errorf("wrong number of fields in ScopedRule: %d != %d", g, e)
-	}
-	return nil
+type ScopedChecks struct {
+	Checks []string `json:"checks"`
+	Scope  *uint64  `json:"origin"`
 }
 
 func (w World) String() string {
@@ -119,14 +100,14 @@ func (w World) String() string {
 		}
 
 		if visible {
-			facts = append(facts, f.Fact)
+			facts = append(facts, f.Facts...)
 		}
 	}
 	sort.Strings(facts)
 	rules := []string{}
 	for _, r := range w.Rules {
 		if r.Scope == nil || *r.Scope == 0 {
-			rules = append(rules, r.Rule)
+			rules = append(rules, r.Rules...)
 		}
 	}
 	sort.Strings(rules)
