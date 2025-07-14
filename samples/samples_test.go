@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"testing"
@@ -88,22 +89,26 @@ type ScopedChecks struct {
 }
 
 func (w World) String() string {
-	facts := []string{}
+	facts := make(map[string][]string)
 	for _, f := range w.Facts {
-		visible := true
-		for _, s := range f.Scope {
-
-			if s != nil && *s != 0 {
-				visible = false
-				break
+		origin := make([]uint64, len(f.Scope))
+		for i, s := range f.Scope {
+			if s != nil {
+				origin[i] = *s
+			} else {
+				origin[i] = math.MaxUint64
 			}
 		}
 
-		if visible {
-			facts = append(facts, f.Facts...)
+		originStr := fmt.Sprintf("%v", origin)
+		facts[originStr] = make([]string, len(f.Facts))
+
+		for _, fact := range f.Facts {
+			facts[originStr] = append(facts[originStr], fact)
 		}
+		sort.Strings(facts[originStr])
 	}
-	sort.Strings(facts)
+
 	rules := []string{}
 	for _, r := range w.Rules {
 		if r.Scope == nil || *r.Scope == 0 {
