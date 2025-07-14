@@ -260,15 +260,21 @@ func (d SymbolDebugger) World(w *World) string {
 		}
 		sort.Strings(facts[origin])
 	}
-	rulesStr := make([]string, 0)
+	rules := make(map[string][]string)
 	for _, o := range w.rules {
 		for _, r := range o.Rules {
-			rulesStr = append(rulesStr, fmt.Sprintf("%d: %s", r.Origin, d.Rule(r.Rule)))
+			originStr := fmt.Sprintf("%d", r.Origin)
+			if _, ok := rules[originStr]; !ok {
+				rules[originStr] = make([]string, 0)
+			}
+			rules[originStr] = append(rules[originStr], d.Rule(r.Rule))
 		}
 	}
+	for _, r := range rules {
+		sort.Strings(r)
+	}
 
-	sort.Strings(rulesStr)
-	return fmt.Sprintf("World {{\n\tfacts: %v\n\trules: %v\n}}", facts, rulesStr)
+	return fmt.Sprintf("World {{\n\tfacts: %v\n\trules: %v\n}}", facts, rules)
 }
 
 func (d SymbolDebugger) OriginFacts(s *OriginFacts) string {

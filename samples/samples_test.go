@@ -109,13 +109,20 @@ func (w World) String() string {
 		sort.Strings(facts[originStr])
 	}
 
-	rules := []string{}
+	rules := make(map[string][]string)
+
 	for _, r := range w.Rules {
-		if r.Scope == nil || *r.Scope == 0 {
-			rules = append(rules, r.Rules...)
+		origin := uint64(math.MaxUint64)
+		if r.Scope != nil {
+			origin = *r.Scope
 		}
+
+		originStr := fmt.Sprintf("%d", origin)
+		rules[originStr] = make([]string, len(r.Rules))
+
+		rules[originStr] = r.Rules
+		sort.Strings(rules[originStr])
 	}
-	sort.Strings(rules)
 
 	return fmt.Sprintf("World {{\n\tfacts: %v\n\trules: %v\n}}", facts, rules)
 }
