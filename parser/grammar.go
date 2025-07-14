@@ -217,7 +217,7 @@ type Term struct {
 	Date      *string    `| @DateTime`
 	Integer   *int64     `| @Int`
 	Bool      *Bool      `| @Bool`
-	Set       []*Term    `| "[" @@ ("," @@)* "]"`
+	Set       []*Term    `| "{" @@ ("," @@)* "}"`
 }
 
 type Value struct {
