@@ -218,6 +218,7 @@ func (r Rule) Apply(ruleOrigin uint64, factsIterator *FactIterator, newFacts *Or
 	}
 
 	combinations := combine(variables, r.Body, factsIterator, syms)
+	currentRuleOrigin := MakeOrigin([]uint64{ruleOrigin})
 
 	for res := range combinations {
 
@@ -254,7 +255,8 @@ func (r Rule) Apply(ruleOrigin uint64, factsIterator *FactIterator, newFacts *Or
 
 			predicate.Terms[i] = *v
 		}
-		newFacts.Insert(res.Origin, Fact{predicate})
+		newOrigin := res.Origin.Merge(currentRuleOrigin)
+		newFacts.Insert(newOrigin, Fact{predicate})
 	}
 
 	return nil

@@ -129,7 +129,7 @@ func (s *OriginFacts) Merge(other OriginFacts) {
 
 		found := false
 		for _, v := range *s {
-			if v.Origin.Equal(v.Origin) {
+			if v.Origin.Equal(factSet.Origin) {
 				v.Facts.InsertAll(factSet.Facts.Facts)
 				found = true
 			}
