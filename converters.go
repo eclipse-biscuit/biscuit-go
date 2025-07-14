@@ -13,17 +13,17 @@ import (
 
 func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 	out := &pb.Block{
-		Symbols: *input.symbols,
+		Symbols: input.symbols.Symbols,
 		Context: proto.String(input.context),
 		Version: proto.Uint32(input.version),
 	}
 
 	facts := input.facts
 	if facts != nil {
-		out.FactsV2 = make([]*pb.FactV2, len(*facts))
+		out.Facts = make([]*pb.Fact, len(facts))
 		var err error
-		for i, fact := range *facts {
-			out.FactsV2[i], err = tokenFactToProtoFactV2(fact)
+		for i, fact := range facts {
+			out.Facts[i], err = tokenFactToProtoFact(fact)
 			if err != nil {
 				return nil, err
 			}
@@ -32,25 +32,25 @@ func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 
 	rules := input.rules
 	if rules != nil {
-		out.RulesV2 = make([]*pb.RuleV2, len(rules))
+		out.Rules = make([]*pb.Rule, len(rules))
 		for i, rule := range rules {
-			r, err := tokenRuleToProtoRuleV2(rule)
+			r, err := tokenRuleToProtoRule(rule)
 			if err != nil {
 				return nil, err
 			}
-			out.RulesV2[i] = r
+			out.Rules[i] = r
 		}
 	}
 
 	checks := input.checks
 	if checks != nil {
-		out.ChecksV2 = make([]*pb.CheckV2, len(checks))
+		out.Checks = make([]*pb.Check, len(checks))
 		for i, check := range checks {
-			c, err := tokenCheckToProtoCheckV2(check)
+			c, err := tokenCheckToProtoCheck(check)
 			if err != nil {
 				return nil, err
 			}
-			out.ChecksV2[i] = c
+			out.Checks[i] = c
 		}
 	}
 
@@ -58,9 +58,9 @@ func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 }
 
 func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
-	symbols := datalog.SymbolTable(input.Symbols)
+	symbols := datalog.SymbolTable{Symbols: input.Symbols}
 
-	var facts datalog.FactSet
+	var facts []datalog.Fact
 	var rules []datalog.Rule
 	var checks []datalog.Check
 
@@ -81,28 +81,28 @@ func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
 
 	switch input.GetVersion() {
 	case 3:
-		facts = make(datalog.FactSet, len(input.FactsV2))
-		rules = make([]datalog.Rule, len(input.RulesV2))
-		checks = make([]datalog.Check, len(input.ChecksV2))
+		facts = make([]datalog.Fact, len(input.Facts))
+		rules = make([]datalog.Rule, len(input.Rules))
+		checks = make([]datalog.Check, len(input.Checks))
 
-		for i, pbFact := range input.FactsV2 {
-			f, err := protoFactToTokenFactV2(pbFact)
+		for i, pbFact := range input.Facts {
+			f, err := protoFactToTokenFact(pbFact)
 			if err != nil {
 				return nil, err
 			}
 			facts[i] = *f
 		}
 
-		for i, pbRule := range input.RulesV2 {
-			r, err := protoRuleToTokenRuleV2(pbRule)
+		for i, pbRule := range input.Rules {
+			r, err := protoRuleToTokenRule(pbRule)
 			if err != nil {
 				return nil, err
 			}
 			rules[i] = *r
 		}
 
-		for i, pbCheck := range input.ChecksV2 {
-			c, err := protoCheckToTokenCheckV2(pbCheck)
+		for i, pbCheck := range input.Checks {
+			c, err := protoCheckToTokenCheck(pbCheck)
 			if err != nil {
 				return nil, err
 			}
@@ -114,7 +114,7 @@ func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
 
 	return &Block{
 		symbols: &symbols,
-		facts:   &facts,
+		facts:   facts,
 		rules:   rules,
 		checks:  checks,
 		context: input.GetContext(),

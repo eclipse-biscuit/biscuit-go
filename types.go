@@ -22,9 +22,10 @@ var defaultSymbolTable = &datalog.SymbolTable{}
 
 type Block struct {
 	symbols *datalog.SymbolTable
-	facts   *datalog.FactSet
+	facts   []datalog.Fact
 	rules   []datalog.Rule
 	checks  []datalog.Check
+	scopes  []datalog.Scope
 	context string
 	version uint32
 }
@@ -33,8 +34,8 @@ func (b *Block) Code(symbols *datalog.SymbolTable) string {
 	debug := &datalog.SymbolDebugger{
 		SymbolTable: symbols,
 	}
-	facts := make([]string, len(*b.facts))
-	for i, f := range *b.facts {
+	facts := make([]string, len(b.facts))
+	for i, f := range b.facts {
 		facts[i] = debug.Predicate(f.Predicate)
 	}
 	rules := make([]string, len(b.rules))
@@ -51,16 +52,22 @@ func (b *Block) Code(symbols *datalog.SymbolTable) string {
 		%v
 		%s
 		%s
+		scopes: %v
 	}`,
 		strings.Join(facts, ";\n"),
 		strings.Join(rules, ";\n"),
 		strings.Join(checks, ";\n"),
+		b.scopes,
 	)
 }
 
 func (b *Block) String(symbols *datalog.SymbolTable) string {
 	debug := &datalog.SymbolDebugger{
 		SymbolTable: symbols,
+	}
+	facts := make([]string, len(b.facts))
+	for i, f := range b.facts {
+		facts[i] = debug.Predicate(f.Predicate)
 	}
 	rules := make([]string, len(b.rules))
 	for i, r := range b.rules {
@@ -82,7 +89,7 @@ func (b *Block) String(symbols *datalog.SymbolTable) string {
 	}`,
 		*b.symbols,
 		b.context,
-		debug.FactSet(b.facts),
+		facts,
 		rules,
 		strings.Join(checks, ", "),
 		b.version,
@@ -172,7 +179,7 @@ func fromDatalogID(symbols *datalog.SymbolTable, id datalog.Term) (Term, error) 
 	case datalog.TermTypeBool:
 		a = Bool(id.(datalog.Bool))
 	case datalog.TermTypeSet:
-		setIDs := id.(datalog.Set)
+		setIDs := id.(datalog.TermSet)
 		set := make(Set, 0, len(setIDs))
 		for _, i := range setIDs {
 			setTerm, err := fromDatalogID(symbols, i)
@@ -193,6 +200,7 @@ type Rule struct {
 	Head        Predicate
 	Body        []Predicate
 	Expressions []Expression
+	Scopes      []datalog.Scope
 }
 
 func (r Rule) convert(symbols *datalog.SymbolTable) datalog.Rule {
@@ -205,10 +213,17 @@ func (r Rule) convert(symbols *datalog.SymbolTable) datalog.Rule {
 	for i, e := range r.Expressions {
 		dlExpressions[i] = e.convert(symbols)
 	}
+
+	scopes := make([]datalog.Scope, len(r.Scopes))
+	for i, scope := range r.Scopes {
+		scopes[i] = scope
+	}
+
 	return datalog.Rule{
-		Head:        r.Head.convert(symbols),
-		Body:        dlBody,
-		Expressions: dlExpressions,
+		Head:          r.Head.convert(symbols),
+		Body:          dlBody,
+		Expressions:   dlExpressions,
+		TrustedScopes: scopes,
 	}
 }
 
@@ -236,10 +251,16 @@ func fromDatalogRule(symbols *datalog.SymbolTable, dlRule datalog.Rule) (*Rule, 
 		expressions[i] = expr
 	}
 
+	scopes := make([]datalog.Scope, len(dlRule.TrustedScopes))
+	for i, scope := range dlRule.TrustedScopes {
+		scopes[i] = scope
+	}
+
 	return &Rule{
 		Head:        *head,
 		Body:        body,
 		Expressions: expressions,
+		Scopes:      scopes,
 	}, nil
 }
 
@@ -588,7 +609,7 @@ type Set []Term
 
 func (a Set) Type() TermType { return TermTypeSet }
 func (a Set) convert(symbols *datalog.SymbolTable) datalog.Term {
-	datalogSet := make(datalog.Set, 0, len(a))
+	datalogSet := make(datalog.TermSet, 0, len(a))
 	for _, e := range a {
 		datalogSet = append(datalogSet, e.convert(symbols))
 	}
@@ -621,3 +642,85 @@ type Policy struct {
 	Queries []Rule
 	Kind    PolicyKind
 }
+
+type ScopeType byte
+
+const (
+	ScopeTypeAuthority ScopeType = iota
+	ScopeTypePrevious
+	ScopeTypePublicKey
+	ScopeTypeParameter
+)
+
+type Scope interface {
+	Type() ScopeType
+	convert(symbols *datalog.SymbolTable) datalog.Scope
+}
+
+type AuthorityScope struct{}
+
+func (AuthorityScope) Type() ScopeType {
+	return ScopeTypeAuthority
+}
+
+func (AuthorityScope) convert(symbols *datalog.SymbolTable) datalog.Scope {
+	return datalog.AuthorityScope{}
+}
+
+type PreviousScope struct{}
+
+func (PreviousScope) Type() ScopeType {
+	return ScopeTypePrevious
+}
+
+func (PreviousScope) convert(symbols *datalog.SymbolTable) datalog.Scope {
+	return datalog.PreviousScope{}
+}
+
+/*
+type PublicKeyScope struct {
+	publicKey ed25519.PublicKey
+}
+
+func (PublicKeyScope) Type() ScopeType {
+	return ScopeTypePublicKey
+}
+
+func (s PublicKeyScope) convert(symbols *datalog.SymbolTable) datalog.Scope {
+	return datalog.PublicKeyScope{ID: symbols.InsertPublicKey(s.publicKey)}
+}
+
+type ParameterScope struct {
+	parameter string
+}
+
+func (ParameterScope) Type() ScopeType {
+	return ScopeTypeParameter
+}
+
+func (s Scope) convert(symbols *datalog.SymbolTable) datalog.Scope {
+	queries := make([]datalog.Rule, len(c.Queries))
+	for i, q := range c.Queries {
+		queries[i] = q.convert(symbols)
+	}
+
+	return datalog.Check{
+		Queries: queries,
+	}
+}
+*/
+/*
+func fromDatalogScope(symbols *datalog.SymbolTable, dlScope datalog.Scope) (*Scope, error) {
+	queries := make([]Rule, len(dlCheck.Queries))
+	for i, q := range dlCheck.Queries {
+		query, err := fromDatalogRule(symbols, q)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert datalog check query: %w", err)
+		}
+		queries[i] = *query
+	}
+
+	return &Check{
+		Queries: queries,
+	}, nil
+}*/

@@ -16,14 +16,14 @@ import (
 // code examples for the documentation at https://www.biscuitsec.org
 // if these functions change, please send a PR at https://github.com/biscuit-auth/website
 
-func CreateKey() (ed25519.PublicKey, ed25519.PrivateKey) {
+func CreateKey() (biscuit.PublicKey, biscuit.PrivateKey) {
 	rng := rand.Reader
-	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+	publicRoot, privateRoot, _ := biscuit.NewEd25519KeyPair(rng)
 	return publicRoot, privateRoot
 }
 
-func CreateToken(root *ed25519.PrivateKey) (*biscuit.Biscuit, error) {
-	builder := biscuit.NewBuilder(*root)
+func CreateToken(root biscuit.PrivateKey) (*biscuit.Biscuit, error) {
+	builder := biscuit.NewBuilder(root)
 
 	fact, err := parser.FromStringFact(`user("1234")`)
 	if err != nil {
@@ -51,8 +51,8 @@ func CreateToken(root *ed25519.PrivateKey) (*biscuit.Biscuit, error) {
 	return token, nil
 }
 
-func Authorize(token *biscuit.Biscuit, root *ed25519.PublicKey) error {
-	authorizer, err := token.Authorizer(*root)
+func Authorize(token *biscuit.Biscuit, root biscuit.PublicKey) error {
+	authorizer, err := token.Authorizer(root)
 	if err != nil {
 		return fmt.Errorf("failed to create verifier: %v", err)
 	}

@@ -4,11 +4,11 @@
 package biscuittest
 
 import (
-	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"testing"
@@ -67,70 +67,65 @@ type BiscuitError struct {
 }
 
 type World struct {
-	Facts    []ScopedFact `json:"facts"`
-	Rules    []ScopedRule `json:"rules"`
-	Checks   []string     `json:"checks"`
-	Policies []string     `json:"policies"`
+	Facts    []ScopedFacts  `json:"facts"`
+	Rules    []ScopedRules  `json:"rules"`
+	Checks   []ScopedChecks `json:"checks"`
+	Policies []string       `json:"policies"`
 }
 
-type ScopedFact struct {
-	Fact  string
-	Scope [](*int32)
+type ScopedFacts struct {
+	Facts []string    `json:"facts"`
+	Scope [](*uint64) `json:"origin"`
 }
 
-func (sf *ScopedFact) UnmarshalJSON(buf []byte) error {
-	tmp := []interface{}{&sf.Fact, &sf.Scope}
-	wantLen := len(tmp)
-	if err := json.Unmarshal(buf, &tmp); err != nil {
-		return err
-	}
-	if g, e := len(tmp), wantLen; g != e {
-		return fmt.Errorf("wrong number of fields in ScopedFact: %d != %d", g, e)
-	}
-	return nil
+type ScopedRules struct {
+	Rules []string `json:"rules"`
+	Scope *uint64  `json:"origin"`
 }
 
-type ScopedRule struct {
-	Rule  string
-	Scope *int32
-}
-
-func (sr *ScopedRule) UnmarshalJSON(buf []byte) error {
-	tmp := []interface{}{&sr.Rule, &sr.Scope}
-	wantLen := len(tmp)
-	if err := json.Unmarshal(buf, &tmp); err != nil {
-		return err
-	}
-	if g, e := len(tmp), wantLen; g != e {
-		return fmt.Errorf("wrong number of fields in ScopedRule: %d != %d", g, e)
-	}
-	return nil
+type ScopedChecks struct {
+	Checks []string `json:"checks"`
+	Scope  *uint64  `json:"origin"`
 }
 
 func (w World) String() string {
-	facts := []string{}
+	facts := make(map[string][]string)
 	for _, f := range w.Facts {
-		visible := true
-		for _, s := range f.Scope {
-
-			if s != nil && *s != 0 {
-				visible = false
-				break
+		origin := make([]uint64, len(f.Scope))
+		for i, s := range f.Scope {
+			if s != nil {
+				origin[i] = *s
+			} else {
+				origin[i] = math.MaxUint64
 			}
 		}
+		sort.Slice(origin, func(i, j int) bool {
+			return origin[i] < origin[j]
+		})
 
-		if visible {
-			facts = append(facts, f.Fact)
+		originStr := fmt.Sprintf("%v", origin)
+		facts[originStr] = make([]string, 0)
+
+		for _, fact := range f.Facts {
+			facts[originStr] = append(facts[originStr], fact)
 		}
+		sort.Strings(facts[originStr])
 	}
-	sort.Strings(facts)
-	rules := []string{}
+
+	rules := make(map[string][]string)
+
 	for _, r := range w.Rules {
-		if r.Scope == nil || *r.Scope == 0 {
-			rules = append(rules, r.Rule)
+		origin := uint64(math.MaxUint64)
+		if r.Scope != nil {
+			origin = *r.Scope
 		}
+
+		originStr := fmt.Sprintf("%d", origin)
+		rules[originStr] = make([]string, 0)
+
+		rules[originStr] = r.Rules
+		sort.Strings(rules[originStr])
 	}
-	sort.Strings(rules)
 
 	return fmt.Sprintf("World {{\n\tfacts: %v\n\trules: %v\n}}", facts, rules)
 }
@@ -142,13 +137,23 @@ type Validation struct {
 	RevocationIds  []string `json:"revocation_ids"`
 }
 
-func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
+func CheckSample(root_key biscuit.PublicKey, c TestCase, t *testing.T) {
 	// all these contain v4 blocks, which are not supported yet
-	if c.Filename == "test024_third_party.bc" ||
-		c.Filename == "test025_check_all.bc" ||
-		c.Filename == "test026_public_keys_interning.bc" ||
+	if //c.Filename == "test024_third_party.bc" ||
+	c.Filename == "test025_check_all.bc" ||
+		//c.Filename == "test026_public_keys_interning.bc" ||
 		c.Filename == "test027_integer_wraparound.bc" ||
-		c.Filename == "test028_expressions_v4.bc" {
+		c.Filename == "test028_expressions_v4.bc" ||
+		c.Filename == "test029_reject_if.bc" ||
+		c.Filename == "test030_null.bc" ||
+		c.Filename == "test031_heterogeneous_equal.bc" ||
+		c.Filename == "test032_laziness_closures.bc" ||
+		c.Filename == "test033_typeof.bc" ||
+		c.Filename == "test034_array_map.bc" ||
+		c.Filename == "test035_ffi.bc" ||
+		c.Filename == "test036_secp256r1.bc" ||
+		c.Filename == "test037_secp256r1_third_party.bc" ||
+		c.Filename == "test038_try_op.bc" {
 		t.SkipNow()
 	}
 	fmt.Printf("Checking sample %s\n", c.Filename)
@@ -181,7 +186,7 @@ func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
 	p := parser.New()
 
 	rng := rand.Reader
-	_, privateRoot, _ := ed25519.GenerateKey(rng)
+	_, privateRoot, _ := biscuit.NewEd25519KeyPair(rng)
 	authority, err := p.Block(blocks[0].Code, nil)
 	require.NoError(t, err)
 	builder := biscuit.NewBuilder(privateRoot)
@@ -203,7 +208,7 @@ func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
 	require.Equal(t, sample, rebuilt.Code())
 }
 
-func CompareResult(root_key ed25519.PublicKey, filename string, token biscuit.Biscuit, v Validation, t *testing.T) {
+func CompareResult(root_key biscuit.PublicKey, filename string, token biscuit.Biscuit, v Validation, t *testing.T) {
 	p := parser.New()
 	authorizer_code, err := p.Authorizer(v.AuthorizerCode, nil)
 	require.NoError(t, err)
@@ -250,7 +255,9 @@ func TestReadSamples(t *testing.T) {
 	err = json.Unmarshal(b, &samples)
 	require.NoError(t, err)
 
-	root_key, err := hex.DecodeString(samples.RootPublicKey)
+	root_key_data, err := hex.DecodeString(samples.RootPublicKey)
+	require.NoError(t, err)
+	root_key, err := biscuit.Ed25519PublicKeyDeserialize(root_key_data)
 	require.NoError(t, err)
 	fmt.Printf("Checking %d samples\n", len(samples.TestCases))
 	for _, v := range samples.TestCases {

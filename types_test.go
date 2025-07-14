@@ -14,7 +14,7 @@ import (
 func TestFromDatalogFact(t *testing.T) {
 	now := time.Now()
 
-	symbolTable := &datalog.SymbolTable{"sym0", "sym1", "var1"}
+	symbolTable := &datalog.SymbolTable{Symbols: []string{"sym0", "sym1", "var1"}}
 	dlFact := datalog.Fact{
 		Predicate: datalog.Predicate{
 			Name: datalog.String(datalog.OFFSET + 0),
@@ -27,7 +27,7 @@ func TestFromDatalogFact(t *testing.T) {
 				datalog.Bytes([]byte("some random bytes")),
 				datalog.Bool(true),
 				datalog.Bool(false),
-				datalog.Set{
+				datalog.TermSet{
 					symbolTable.Insert("abc"),
 					datalog.Integer(42),
 					datalog.String(datalog.OFFSET + 1),
