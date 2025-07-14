@@ -253,7 +253,7 @@ func (d SymbolDebugger) World(w *World) string {
 	facts := make(map[string][]string)
 	for _, f := range *w.facts {
 		origin := fmt.Sprintf("%d", f.Origin)
-		facts[origin] = make([]string, len(f.Facts.Facts))
+		facts[origin] = make([]string, 0)
 
 		for _, fact := range f.Facts.Facts {
 			facts[origin] = append(facts[origin], d.Predicate(fact.Predicate))

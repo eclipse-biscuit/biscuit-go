@@ -101,7 +101,7 @@ func (w World) String() string {
 		}
 
 		originStr := fmt.Sprintf("%v", origin)
-		facts[originStr] = make([]string, len(f.Facts))
+		facts[originStr] = make([]string, 0)
 
 		for _, fact := range f.Facts {
 			facts[originStr] = append(facts[originStr], fact)
@@ -118,7 +118,7 @@ func (w World) String() string {
 		}
 
 		originStr := fmt.Sprintf("%d", origin)
-		rules[originStr] = make([]string, len(r.Rules))
+		rules[originStr] = make([]string, 0)
 
 		rules[originStr] = r.Rules
 		sort.Strings(rules[originStr])
