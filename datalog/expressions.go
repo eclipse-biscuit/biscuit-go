@@ -94,23 +94,8 @@ func (e *Expression) Print(symbols *SymbolTable) string {
 		switch op.Type() {
 		case OpTypeValue:
 			id := op.(Value).ID
-			switch id.Type() {
-			case TermTypeString:
-				err := s.Push(fmt.Sprintf("\"%s\"", symbols.Str(id.(String))))
-				if err != nil {
-					return "<invalid expression: stack overflow>"
-				}
-			case TermTypeVariable:
-				err := s.Push(fmt.Sprintf("$%s", symbols.Var(id.(Variable))))
-				if err != nil {
-					return "<invalid expression: stack overflow>"
-				}
-			default:
-				err := s.Push(id.String())
-				if err != nil {
-					return "<invalid expression: stack overflow>"
-				}
-			}
+			debug := SymbolDebugger{symbols}
+			s.Push(debug.Term(id))
 		case OpTypeUnary:
 			v, err := s.Pop()
 			if err != nil {

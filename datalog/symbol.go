@@ -183,21 +183,30 @@ type SymbolDebugger struct {
 func (d SymbolDebugger) Predicate(p Predicate) string {
 	strs := make([]string, len(p.Terms))
 	for i, id := range p.Terms {
-		var s string
-		if sym, ok := id.(String); ok {
-			s = "\"" + d.Str(sym) + "\""
-		} else if variable, ok := id.(Variable); ok {
-			s = "$" + d.Var(variable)
-		} else {
-			s = fmt.Sprintf("%v", id)
-		}
-		strs[i] = s
+		strs[i] = d.Term(id)
 	}
 	return fmt.Sprintf("%s(%s)", d.Str(p.Name), strings.Join(strs, ", "))
 }
 
 func (d SymbolDebugger) Fact(origin Origin, f Fact) string {
 	return fmt.Sprintf("%d: %s", origin, d.Predicate(f.Predicate))
+}
+
+func (d SymbolDebugger) Term(t Term) string {
+	switch t.Type() {
+	case TermTypeString:
+		return "\"" + d.Str(t.(String)) + "\""
+	case TermTypeVariable:
+		return "$" + d.Var(t.(Variable))
+	case TermTypeSet:
+		terms := make([]string, len(t.(TermSet)))
+		for i, term := range t.(TermSet) {
+			terms[i] = d.Term(term)
+		}
+		return "{" + strings.Join(terms, ", ") + "}"
+	default:
+		return fmt.Sprintf("%v", t)
+	}
 }
 
 func (d SymbolDebugger) Rule(r Rule) string {
@@ -252,7 +261,14 @@ func (d SymbolDebugger) Check(c Check) string {
 func (d SymbolDebugger) World(w *World) string {
 	facts := make(map[string][]string)
 	for _, f := range *w.facts {
-		origin := fmt.Sprintf("%d", f.Origin)
+		originSlice := make([]uint64, 0)
+		for _, o := range f.Origin {
+			originSlice = append(originSlice, o)
+		}
+		sort.Slice(originSlice, func(i, j int) bool {
+			return originSlice[i] < originSlice[j]
+		})
+		origin := fmt.Sprintf("%v", originSlice)
 		facts[origin] = make([]string, 0)
 
 		for _, fact := range f.Facts.Facts {

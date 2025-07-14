@@ -99,6 +99,9 @@ func (w World) String() string {
 				origin[i] = math.MaxUint64
 			}
 		}
+		sort.Slice(origin, func(i, j int) bool {
+			return origin[i] < origin[j]
+		})
 
 		originStr := fmt.Sprintf("%v", origin)
 		facts[originStr] = make([]string, 0)
