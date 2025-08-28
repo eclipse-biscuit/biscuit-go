@@ -21,7 +21,7 @@ func ExampleBiscuit() {
 		right("/a/file1.txt", {write});
 		right("/a/file2.txt", {read});
 		right("/a/file3.txt", {write});
-	`, map[string]biscuit.Term{"read": biscuit.String("read"), "write": biscuit.String("write")})
+	`, parser.ParametersMap{"read": biscuit.String("read"), "write": biscuit.String("write")})
 	if err != nil {
 		panic(fmt.Errorf("failed to parse authority block: %v", err))
 	}
@@ -50,7 +50,7 @@ func ExampleBiscuit() {
 
 	block, err := parser.FromStringBlockWithParams(`
 			check if resource($file), operation($permission), [{read}].contains($permission);`,
-		map[string]biscuit.Term{"read": biscuit.String("read")})
+		parser.ParametersMap{"read": biscuit.String("read")})
 
 	if err != nil {
 		panic(fmt.Errorf("failed to parse block: %v", err))
@@ -84,7 +84,7 @@ func ExampleBiscuit() {
 		resource({res});
 		operation({op});
 		allow if right({res}, {op});
-		`, map[string]biscuit.Term{"res": biscuit.String("/a/file1.txt"), "op": biscuit.String("read")})
+		`, parser.ParametersMap{"res": biscuit.String("/a/file1.txt"), "op": biscuit.String("read")})
 
 	if err != nil {
 		panic(fmt.Errorf("failed to parse authorizer: %v", err))
@@ -107,7 +107,7 @@ func ExampleBiscuit() {
 		resource({res});
 		operation({op});
 		allow if right({res}, {op});
-		`, map[string]biscuit.Term{"res": biscuit.String("/a/file1.txt"), "op": biscuit.String("write")})
+		`, parser.ParametersMap{"res": biscuit.String("/a/file1.txt"), "op": biscuit.String("write")})
 
 	if err != nil {
 		panic(fmt.Errorf("failed to parse authorizer: %v", err))
@@ -121,7 +121,7 @@ func ExampleBiscuit() {
 	}
 
 	// Output: Token1 length: 251
-	// Token2 length: 433
+	// Token2 length: 435
 	// allowed to read /a/file1.txt
 	// forbidden to write /a/file1.txt
 }

@@ -241,8 +241,17 @@ func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error 
 	return nil
 }
 
+type CheckKind byte
+
+const (
+	CheckKindOne CheckKind = iota
+	CheckKindAll
+	CheckKindReject
+)
+
 type Check struct {
 	Queries []Rule
+	Kind    CheckKind
 }
 
 type FactSet []Fact

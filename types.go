@@ -14,19 +14,25 @@ import (
 )
 
 const MinSchemaVersion uint32 = 3
-const MaxSchemaVersion uint32 = 3
+const MaxSchemaVersion uint32 = 5
 
 // defaultSymbolTable predefines some symbols available in every implementation, to avoid
 // transmitting them with every token
 var defaultSymbolTable = &datalog.SymbolTable{}
 
 type Block struct {
-	symbols *datalog.SymbolTable
-	facts   *datalog.FactSet
-	rules   []datalog.Rule
-	checks  []datalog.Check
-	context string
-	version uint32
+	symbols    *datalog.SymbolTable
+	facts      *datalog.FactSet
+	rules      []datalog.Rule
+	checks     []datalog.Check
+	context    string
+	version    uint32
+	publicKeys []PublicKey
+}
+
+type PublicKey struct {
+	Algorithm string
+	Key       []byte
 }
 
 func (b *Block) Code(symbols *datalog.SymbolTable) string {
@@ -47,14 +53,26 @@ func (b *Block) Code(symbols *datalog.SymbolTable) string {
 		checks[i] = debug.Check(c)
 	}
 
+	publicKeys := make([]string, len(b.publicKeys))
+	for i, pk := range b.publicKeys {
+		publicKeys[i] = fmt.Sprintf("public_key(%s/%x)", pk.Algorithm, pk.Key)
+	}
+
+	var publicKeysSection string
+	if len(publicKeys) > 0 {
+		publicKeysSection = strings.Join(publicKeys, ";\n")
+	}
+
 	return fmt.Sprintf(`Block {
 		%v
+		%s
 		%s
 		%s
 	}`,
 		strings.Join(facts, ";\n"),
 		strings.Join(rules, ";\n"),
 		strings.Join(checks, ";\n"),
+		publicKeysSection,
 	)
 }
 
@@ -465,6 +483,14 @@ func fromDatalogBinaryOp(symbols *datalog.SymbolTable, dbBinary datalog.BinaryOp
 
 type Check struct {
 	Queries []Rule
+	Kind    datalog.CheckKind
+}
+
+func NewCheck(queries []Rule) Check {
+	return Check{
+		Queries: queries,
+		Kind:    datalog.CheckKindOne,
+	}
 }
 
 func (c Check) convert(symbols *datalog.SymbolTable) datalog.Check {
@@ -475,6 +501,7 @@ func (c Check) convert(symbols *datalog.SymbolTable) datalog.Check {
 
 	return datalog.Check{
 		Queries: queries,
+		Kind:    c.Kind,
 	}
 }
 
@@ -490,6 +517,7 @@ func fromDatalogCheck(symbols *datalog.SymbolTable, dlCheck datalog.Check) (*Che
 
 	return &Check{
 		Queries: queries,
+		Kind:    dlCheck.Kind,
 	}, nil
 }
 

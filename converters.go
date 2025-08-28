@@ -54,7 +54,50 @@ func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 		}
 	}
 
+	// Convert public keys
+	publicKeys := input.publicKeys
+	if publicKeys != nil {
+		out.PublicKeys = make([]*pb.PublicKey, len(publicKeys))
+		for i, key := range publicKeys {
+			pbKey, err := tokenPublicKeyToProtoPublicKey(key)
+			if err != nil {
+				return nil, err
+			}
+			out.PublicKeys[i] = pbKey
+		}
+	}
+
 	return out, nil
+}
+
+func tokenPublicKeyToProtoPublicKey(input PublicKey) (*pb.PublicKey, error) {
+	var algorithm pb.PublicKey_Algorithm
+	switch input.Algorithm {
+	case "Ed25519":
+		algorithm = pb.PublicKey_Ed25519
+	default:
+		return nil, fmt.Errorf("unsupported public key algorithm: %s", input.Algorithm)
+	}
+
+	return &pb.PublicKey{
+		Algorithm: &algorithm,
+		Key:       input.Key,
+	}, nil
+}
+
+func protoPublicKeyToTokenPublicKey(input *pb.PublicKey) (PublicKey, error) {
+	var algorithm string
+	switch input.GetAlgorithm() {
+	case pb.PublicKey_Ed25519:
+		algorithm = "Ed25519"
+	default:
+		return PublicKey{}, fmt.Errorf("unsupported public key algorithm: %d", input.GetAlgorithm())
+	}
+
+	return PublicKey{
+		Algorithm: algorithm,
+		Key:       input.Key,
+	}, nil
 }
 
 func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
@@ -80,7 +123,7 @@ func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
 	}
 
 	switch input.GetVersion() {
-	case 3:
+	case 3, 4, 5:
 		facts = make(datalog.FactSet, len(input.FactsV2))
 		rules = make([]datalog.Rule, len(input.RulesV2))
 		checks = make([]datalog.Check, len(input.ChecksV2))
@@ -112,13 +155,27 @@ func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
 		return nil, fmt.Errorf("biscuit: failed to convert proto block to token block: unsupported version: %d", input.GetVersion())
 	}
 
+	// Convert public keys
+	var publicKeys []PublicKey
+	if input.PublicKeys != nil {
+		publicKeys = make([]PublicKey, len(input.PublicKeys))
+		for i, pbKey := range input.PublicKeys {
+			key, err := protoPublicKeyToTokenPublicKey(pbKey)
+			if err != nil {
+				return nil, err
+			}
+			publicKeys[i] = key
+		}
+	}
+
 	return &Block{
-		symbols: &symbols,
-		facts:   &facts,
-		rules:   rules,
-		checks:  checks,
-		context: input.GetContext(),
-		version: input.GetVersion(),
+		symbols:    &symbols,
+		facts:      &facts,
+		rules:      rules,
+		checks:     checks,
+		context:    input.GetContext(),
+		version:    input.GetVersion(),
+		publicKeys: publicKeys,
 	}, nil
 }
 
