@@ -14,6 +14,7 @@ import (
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
 	"github.com/biscuit-auth/biscuit-go/v2"
+	"github.com/biscuit-auth/biscuit-go/v2/datalog"
 )
 
 type Comment string
@@ -620,6 +621,7 @@ func (c *Check) ToBiscuit(parameters ParametersMap) (*biscuit.Check, error) {
 
 	return &biscuit.Check{
 		Queries: queries,
+		Kind:    datalog.CheckKindOne, // Default to "check if" for now
 	}, nil
 }
 

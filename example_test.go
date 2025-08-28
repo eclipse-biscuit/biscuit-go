@@ -121,7 +121,7 @@ func ExampleBiscuit() {
 	}
 
 	// Output: Token1 length: 251
-	// Token2 length: 433
+	// Token2 length: 435
 	// allowed to read /a/file1.txt
 	// forbidden to write /a/file1.txt
 }

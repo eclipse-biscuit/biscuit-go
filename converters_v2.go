@@ -430,6 +430,32 @@ func protoExprBinaryToTokenExprBinary(op *pb.OpBinary) (datalog.BinaryOpFunc, er
 	return binaryOp, nil
 }
 
+func datalogCheckKindToProtoCheckKind(kind datalog.CheckKind) pb.CheckV2_Kind {
+	switch kind {
+	case datalog.CheckKindOne:
+		return pb.CheckV2_One
+	case datalog.CheckKindAll:
+		return pb.CheckV2_All
+	case datalog.CheckKindReject:
+		return pb.CheckV2_Reject
+	default:
+		return pb.CheckV2_One
+	}
+}
+
+func protoCheckKindToDatalogCheckKind(kind pb.CheckV2_Kind) datalog.CheckKind {
+	switch kind {
+	case pb.CheckV2_One:
+		return datalog.CheckKindOne
+	case pb.CheckV2_All:
+		return datalog.CheckKindAll
+	case pb.CheckV2_Reject:
+		return datalog.CheckKindReject
+	default:
+		return datalog.CheckKindOne
+	}
+}
+
 func tokenCheckToProtoCheckV2(input datalog.Check) (*pb.CheckV2, error) {
 	pbQueries := make([]*pb.RuleV2, len(input.Queries))
 	for i, query := range input.Queries {
@@ -440,8 +466,10 @@ func tokenCheckToProtoCheckV2(input datalog.Check) (*pb.CheckV2, error) {
 		pbQueries[i] = q
 	}
 
+	kind := datalogCheckKindToProtoCheckKind(input.Kind)
 	return &pb.CheckV2{
 		Queries: pbQueries,
+		Kind:    &kind,
 	}, nil
 }
 
@@ -455,7 +483,14 @@ func protoCheckToTokenCheckV2(input *pb.CheckV2) (*datalog.Check, error) {
 		queries[i] = *q
 	}
 
+	kind := datalog.CheckKindOne
+	if input.Kind != nil {
+		kind = protoCheckKindToDatalogCheckKind(*input.Kind)
+	}
+
 	return &datalog.Check{
 		Queries: queries,
+		Kind:    kind,
 	}, nil
 }
+

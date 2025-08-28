@@ -133,19 +133,12 @@ func (p *parser) Check(check string, parameters ParametersMap) (biscuit.Check, e
 		return biscuit.Check{}, err
 	}
 
-	queries := make([]biscuit.Rule, len(parsed.Queries))
-	for i, q := range parsed.Queries {
-		query, err := q.ToBiscuit(parameters)
-		if err != nil {
-			return biscuit.Check{}, err
-		}
-
-		queries[i] = *query
+	checkResult, err := parsed.ToBiscuit(parameters)
+	if err != nil {
+		return biscuit.Check{}, err
 	}
 
-	return biscuit.Check{
-		Queries: queries,
-	}, nil
+	return *checkResult, nil
 }
 
 func (p *parser) Policy(policy string, parameters ParametersMap) (biscuit.Policy, error) {

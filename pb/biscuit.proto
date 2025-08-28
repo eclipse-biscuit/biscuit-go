@@ -13,6 +13,12 @@ message SignedBlock {
   required bytes block = 1;
   required PublicKey nextKey = 2;
   required bytes signature = 3;
+  optional ExternalSignature external_signature = 4;
+}
+
+message ExternalSignature {
+  required bytes signature = 1;
+  required PublicKey public_key = 2;
 }
 
 message PublicKey {
@@ -40,6 +46,7 @@ message Block {
   repeated FactV2 facts_v2 = 4;
   repeated RuleV2 rules_v2 = 5;
   repeated CheckV2 checks_v2 = 6;
+  repeated PublicKey public_keys = 7;
 }
 
 message FactV2 {
@@ -53,7 +60,14 @@ message RuleV2 {
 }
 
 message CheckV2 {
+  enum Kind {
+    One = 0;
+    All = 1;
+    Reject = 2;
+  }
+
   repeated RuleV2 queries = 1;
+  optional Kind kind = 2;
 }
 
 message PredicateV2 {

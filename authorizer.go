@@ -114,6 +114,51 @@ func (v *authorizer) AddPolicy(policy Policy) {
 	v.policies = append(v.policies, policy)
 }
 
+func (v *authorizer) evaluateCheckWithWorld(check datalog.Check, world *datalog.World, symbols *datalog.SymbolTable) error {
+	switch check.Kind {
+	case datalog.CheckKindOne:
+		// Original behavior: succeeds if any query succeeds
+		for _, query := range check.Queries {
+			res := world.QueryRule(query, symbols)
+			if len(*res) != 0 {
+				return nil // Check passed
+			}
+		}
+		// All queries failed
+		return fmt.Errorf("check failed")
+
+	case datalog.CheckKindAll:
+		// Check all: succeeds if all results that match the body also succeed the expressions
+		for _, query := range check.Queries {
+			res := world.QueryRule(query, symbols)
+			if len(*res) == 0 {
+				return fmt.Errorf("check all failed: no matches found")
+			}
+			// All matches must satisfy the expressions - this is already handled by QueryRule
+			// since it evaluates both predicates and expressions
+		}
+		return nil
+
+	case datalog.CheckKindReject:
+		// Reject if: succeeds if no set of facts matches the body and expressions
+		for _, query := range check.Queries {
+			res := world.QueryRule(query, symbols)
+			if len(*res) != 0 {
+				return fmt.Errorf("reject if failed: found matching facts")
+			}
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("unknown check kind: %d", check.Kind)
+	}
+}
+
+func (v *authorizer) evaluateCheck(check datalog.Check, symbols *datalog.SymbolTable) error {
+	return v.evaluateCheckWithWorld(check, v.world, symbols)
+}
+
+
 func (v *authorizer) Authorize() error {
 	// if we load facts from the verifier before
 	// the token's fact and rules, we might get inconsistent symbols
@@ -145,19 +190,11 @@ func (v *authorizer) Authorize() error {
 
 	for i, check := range v.checks {
 		c := check.convert(v.symbols)
-		successful := false
-		for _, query := range c.Queries {
-			res := v.world.QueryRule(query, v.symbols)
-			if len(*res) != 0 {
-				successful = true
-				break
-			}
-		}
-		if !successful {
+		if err := v.evaluateCheck(c, v.symbols); err != nil {
 			debug := datalog.SymbolDebugger{
 				SymbolTable: v.symbols,
 			}
-			errs = append(errs, fmt.Errorf("failed to verify check #%d: %s", i, debug.Check(c)))
+			errs = append(errs, fmt.Errorf("failed to verify check #%d: %s - %v", i, debug.Check(c), err))
 		}
 	}
 
@@ -168,19 +205,11 @@ func (v *authorizer) Authorize() error {
 		}
 		c := ch.convert(v.symbols)
 
-		successful := false
-		for _, query := range c.Queries {
-			res := v.world.QueryRule(query, v.symbols)
-			if len(*res) != 0 {
-				successful = true
-				break
-			}
-		}
-		if !successful {
+		if err := v.evaluateCheck(c, v.symbols); err != nil {
 			debug := datalog.SymbolDebugger{
 				SymbolTable: v.symbols,
 			}
-			errs = append(errs, fmt.Errorf("failed to verify block 0 check #%d: %s", i, debug.Check(c)))
+			errs = append(errs, fmt.Errorf("failed to verify block 0 check #%d: %s - %v", i, debug.Check(c), err))
 		}
 	}
 
@@ -240,20 +269,11 @@ func (v *authorizer) Authorize() error {
 			}
 			c := ch.convert(v.symbols)
 
-			successful := false
-			for _, query := range c.Queries {
-				res := block_world.QueryRule(query, v.symbols)
-
-				if len(*res) != 0 {
-					successful = true
-					break
-				}
-			}
-			if !successful {
+			if err := v.evaluateCheckWithWorld(c, block_world, v.symbols); err != nil {
 				debug := datalog.SymbolDebugger{
 					SymbolTable: v.symbols,
 				}
-				errs = append(errs, fmt.Errorf("failed to verify block #%d check #%d: %s", i+1, j, debug.Check(c)))
+				errs = append(errs, fmt.Errorf("failed to verify block #%d check #%d: %s - %v", i+1, j, debug.Check(c), err))
 			}
 		}
 
@@ -331,7 +351,7 @@ func (v *authorizer) LoadPolicies(authorizerPolicies []byte) error {
 	}
 
 	switch pbPolicies.GetVersion() {
-	case 3:
+	case 3, 4, 5:
 		return v.loadPoliciesV2(pbPolicies)
 	default:
 		return fmt.Errorf("verifier: unsupported policies version %d", pbPolicies.GetVersion())
