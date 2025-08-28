@@ -143,7 +143,7 @@ type Validation struct {
 }
 
 func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
-	// all these contain v4 blocks, which are not supported yet
+	// some tests with features not supported yet
 	if c.Filename == "test024_third_party.bc" ||
 		c.Filename == "test025_check_all.bc" ||
 		c.Filename == "test026_public_keys_interning.bc" ||

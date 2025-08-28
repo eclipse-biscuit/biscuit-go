@@ -190,7 +190,9 @@ type Predicate struct {
 }
 
 type Check struct {
-	Queries []*CheckQuery `"check if" @@ ( "or" @@ )*`
+	CheckIf   []*CheckQuery `"check if" @@ ( "or" @@ )*`
+	CheckAll  []*CheckQuery `| "check all" @@ ( "or" @@ )*`
+	RejectIf  []*CheckQuery `| "reject if" @@ ( "or" @@ )*`
 }
 
 type CheckQuery struct {
@@ -609,19 +611,47 @@ func (r *Rule) ToBiscuit(parameters ParametersMap) (*biscuit.Rule, error) {
 }
 
 func (c *Check) ToBiscuit(parameters ParametersMap) (*biscuit.Check, error) {
-	queries := make([]biscuit.Rule, 0, len(c.Queries))
-	for _, q := range c.Queries {
-		r, err := q.ToBiscuit(parameters)
-		if err != nil {
-			return nil, err
+	var queries []biscuit.Rule
+	var kind datalog.CheckKind
+	
+	switch {
+	case c.CheckIf != nil:
+		kind = datalog.CheckKindOne
+		queries = make([]biscuit.Rule, 0, len(c.CheckIf))
+		for _, q := range c.CheckIf {
+			r, err := q.ToBiscuit(parameters)
+			if err != nil {
+				return nil, err
+			}
+			queries = append(queries, *r)
 		}
-
-		queries = append(queries, *r)
+	case c.CheckAll != nil:
+		kind = datalog.CheckKindAll
+		queries = make([]biscuit.Rule, 0, len(c.CheckAll))
+		for _, q := range c.CheckAll {
+			r, err := q.ToBiscuit(parameters)
+			if err != nil {
+				return nil, err
+			}
+			queries = append(queries, *r)
+		}
+	case c.RejectIf != nil:
+		kind = datalog.CheckKindReject
+		queries = make([]biscuit.Rule, 0, len(c.RejectIf))
+		for _, q := range c.RejectIf {
+			r, err := q.ToBiscuit(parameters)
+			if err != nil {
+				return nil, err
+			}
+			queries = append(queries, *r)
+		}
+	default:
+		return nil, fmt.Errorf("check must have one of: check if, check all, or reject if")
 	}
 
 	return &biscuit.Check{
 		Queries: queries,
-		Kind:    datalog.CheckKindOne, // Default to "check if" for now
+		Kind:    kind,
 	}, nil
 }
 

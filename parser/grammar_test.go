@@ -361,7 +361,7 @@ func TestGrammarCheck(t *testing.T) {
 		{
 			Input: `check if parent("a", "b"), parent("b", "c")`,
 			Expected: &Check{
-				Queries: []*CheckQuery{
+				CheckIf: []*CheckQuery{
 					{
 						Body: []*RuleElement{
 							{
@@ -392,7 +392,7 @@ func TestGrammarCheck(t *testing.T) {
 		{
 			Input: `check if parent("a", "b"), parent("b", "c")`,
 			Expected: &Check{
-				Queries: []*CheckQuery{
+				CheckIf: []*CheckQuery{
 					{
 						Body: []*RuleElement{
 							{
@@ -421,7 +421,7 @@ func TestGrammarCheck(t *testing.T) {
 		{
 			Input: `check if parent("a", "b"), parent("b", "c") or parent("a", "b"), parent("b", "c"), $0 > 42, $1.starts_with("test")`,
 			Expected: &Check{
-				Queries: []*CheckQuery{
+				CheckIf: []*CheckQuery{
 					{
 						Body: []*RuleElement{
 							{
@@ -605,7 +605,7 @@ func TestGrammarBlock(t *testing.T) {
 					},
 					{
 						Check: &Check{
-							Queries: []*CheckQuery{
+							CheckIf: []*CheckQuery{
 								{
 									Body: []*RuleElement{
 										{
@@ -685,7 +685,7 @@ func TestGrammarAuthorizer(t *testing.T) {
 					{
 						BlockElement: &BlockElement{
 							Check: &Check{
-								Queries: []*CheckQuery{
+								CheckIf: []*CheckQuery{
 									{
 										Body: []*RuleElement{
 											{
