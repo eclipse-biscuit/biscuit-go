@@ -4,8 +4,8 @@
 package biscuit
 
 import (
-	"crypto/ed25519"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/biscuit-auth/biscuit-go/v2/datalog"
@@ -31,12 +31,12 @@ type Builder interface {
 
 type builderOptions struct {
 	rng       io.Reader
-	rootKey   ed25519.PrivateKey
+	rootKey   PrivateKey
 	rootKeyID *uint32
 
 	symbolsStart int
 	symbols      *datalog.SymbolTable
-	facts        *datalog.FactSet
+	facts        []datalog.Fact
 	rules        []datalog.Rule
 	checks       []datalog.Check
 	context      string
@@ -60,12 +60,11 @@ func WithSymbols(symbols *datalog.SymbolTable) builderOption {
 	return symbolsOption{symbols}
 }
 
-func NewBuilder(root ed25519.PrivateKey, opts ...builderOption) Builder {
+func NewBuilder(root PrivateKey, opts ...builderOption) Builder {
 	b := &builderOptions{
 		rootKey:      root,
 		symbols:      defaultSymbolTable.Clone(),
 		symbolsStart: defaultSymbolTable.Len(),
-		facts:        new(datalog.FactSet),
 	}
 
 	for _, o := range opts {
@@ -99,9 +98,7 @@ func (b *builderOptions) AddBlock(block ParsedBlock) error {
 
 func (b *builderOptions) AddAuthorityFact(fact Fact) error {
 	dlFact := fact.convert(b.symbols)
-	if !b.facts.Insert(dlFact) {
-		return ErrDuplicateFact
-	}
+	b.facts = append(b.facts, dlFact)
 
 	return nil
 }
@@ -212,6 +209,79 @@ func (u *Unmarshaler) Unmarshal(serialized []byte) (*Biscuit, error) {
 	}, nil
 }
 
+func UnmarshalSerialized(serialized []byte) (*SerializedBiscuit, error) {
+	container := new(pb.Biscuit)
+	if err := proto.Unmarshal(serialized, container); err != nil {
+		return nil, err
+	}
+
+	authority := new(CryptoBlock)
+	authority.Data = container.Authority.Block
+	nextKey, err := protoPublicKeyToTokenPublicKey(container.Authority.NextKey)
+	if err != nil {
+		return nil, err
+	}
+	authority.NextKey = nextKey
+	authority.Signature = container.Authority.Signature
+	// the authority block cannot have an external signature
+	// authority.Version = container.Authority.Version
+
+	blocks := make([]CryptoBlock, len(container.Blocks))
+	for i, sb := range container.Blocks {
+		block := new(CryptoBlock)
+		block.Data = sb.Block
+		nextKey, err := protoPublicKeyToTokenPublicKey(sb.NextKey)
+		if err != nil {
+			return nil, err
+		}
+		block.NextKey = nextKey
+		block.Signature = sb.Signature
+		if sb.ExternalSignature != nil {
+			externalSignature := new(ExternalSignature)
+			publicKey, err := protoPublicKeyToTokenPublicKey(sb.ExternalSignature.PublicKey)
+			if err != nil {
+				return nil, err
+			}
+			externalSignature.PublicKey = publicKey
+			externalSignature.Signature = sb.ExternalSignature.Signature
+
+			block.ExternalSignature = externalSignature
+		}
+		//authority.Version = container.Authority.Version
+
+		blocks[i] = *block
+	}
+
+	var proofAlgorithm Algorithm
+	if len(blocks) == 0 {
+		proofAlgorithm = authority.NextKey.Algorithm()
+	} else {
+		proofAlgorithm = blocks[len(blocks)-1].NextKey.Algorithm()
+	}
+
+	var proof TokenNext
+	if container.Proof.GetNextSecret() != nil {
+
+		switch proofAlgorithm {
+		case AlgorithmEd25519:
+			privateKey := &Ed25519PrivateKey{Key: container.Proof.GetNextSecret()}
+			proof = &SecretTokenNext{Key: privateKey}
+		default:
+			return nil, fmt.Errorf("biscuit: unsupported public key algorithm: %v", proofAlgorithm)
+		}
+	} else if container.Proof.GetFinalSignature() != nil {
+		proof = &SealTokenNext{Signature: container.Proof.GetFinalSignature()}
+	} else {
+		return nil, fmt.Errorf("biscuit: invalid proof")
+	}
+
+	return &SerializedBiscuit{
+		Authority: *authority,
+		Blocks:    blocks,
+		Proof:     proof,
+	}, nil
+}
+
 type BlockBuilder interface {
 	AddBlock(block ParsedBlock) error
 	AddFact(fact Fact) error
@@ -224,7 +294,7 @@ type BlockBuilder interface {
 type blockBuilder struct {
 	symbolsStart int
 	symbols      *datalog.SymbolTable
-	facts        *datalog.FactSet
+	facts        []datalog.Fact
 	rules        []datalog.Rule
 	checks       []datalog.Check
 	context      string
@@ -236,7 +306,6 @@ func NewBlockBuilder(baseSymbols *datalog.SymbolTable) BlockBuilder {
 	return &blockBuilder{
 		symbolsStart: baseSymbols.Len(),
 		symbols:      baseSymbols,
-		facts:        new(datalog.FactSet),
 	}
 }
 
@@ -265,9 +334,7 @@ func (b *blockBuilder) AddBlock(block ParsedBlock) error {
 
 func (b *blockBuilder) AddFact(fact Fact) error {
 	dlFact := fact.convert(b.symbols)
-	if !b.facts.Insert(dlFact) {
-		return ErrDuplicateFact
-	}
+	b.facts = append(b.facts, dlFact)
 
 	return nil
 }
@@ -293,8 +360,8 @@ func (b *blockBuilder) SetContext(context string) {
 func (b *blockBuilder) Build() *Block {
 	b.symbols = b.symbols.SplitOff(b.symbolsStart)
 
-	facts := make(datalog.FactSet, len(*b.facts))
-	copy(facts, *b.facts)
+	facts := make([]datalog.Fact, len(b.facts))
+	copy(facts, b.facts)
 
 	rules := make([]datalog.Rule, len(b.rules))
 	copy(rules, b.rules)
@@ -304,7 +371,7 @@ func (b *blockBuilder) Build() *Block {
 
 	return &Block{
 		symbols: b.symbols.Clone(),
-		facts:   &facts,
+		facts:   facts,
 		rules:   rules,
 		checks:  checks,
 		context: b.context,

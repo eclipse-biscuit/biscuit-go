@@ -4,6 +4,7 @@
 package datalog
 
 import (
+	"crypto/ed25519"
 	"fmt"
 	"sort"
 	"strings"
@@ -42,7 +43,10 @@ var DEFAULT_SYMBOLS = [...]string{
 
 var OFFSET = 1024
 
-type SymbolTable []string
+type SymbolTable struct {
+	Symbols    []string
+	PublicKeys []ed25519.PublicKey
+}
 
 func (t *SymbolTable) Insert(s string) String {
 	for i, v := range DEFAULT_SYMBOLS {
@@ -51,14 +55,14 @@ func (t *SymbolTable) Insert(s string) String {
 		}
 	}
 
-	for i, v := range *t {
-		if string(v) == s {
+	for i, v := range t.Symbols {
+		if v == s {
 			return String(OFFSET + i)
 		}
 	}
-	*t = append(*t, s)
+	t.Symbols = append(t.Symbols, s)
 
-	return String(OFFSET + len(*t) - 1)
+	return String(OFFSET + len(t.Symbols) - 1)
 }
 
 func (t *SymbolTable) Sym(s string) Term {
@@ -68,8 +72,8 @@ func (t *SymbolTable) Sym(s string) Term {
 		}
 	}
 
-	for i, v := range *t {
-		if string(v) == s {
+	for i, v := range t.Symbols {
+		if v == s {
 			return String(OFFSET + i)
 		}
 	}
@@ -83,8 +87,8 @@ func (t *SymbolTable) Index(s string) uint64 {
 		}
 	}
 
-	for i, v := range *t {
-		if string(v) == s {
+	for i, v := range t.Symbols {
+		if v == s {
 			return uint64(OFFSET + i)
 		}
 	}
@@ -99,10 +103,10 @@ func (t *SymbolTable) Str(sym String) string {
 			return DEFAULT_SYMBOLS[int(sym)]
 		}
 	}
-	if int(sym)-1024 > len(*t)-1 {
+	if int(sym)-1024 > len(t.Symbols)-1 {
 		return fmt.Sprintf("<invalid symbol %d>", sym)
 	}
-	return (*t)[int(sym)-1024]
+	return t.Symbols[int(sym)-1024]
 }
 
 func (t *SymbolTable) Var(v Variable) string {
@@ -113,10 +117,10 @@ func (t *SymbolTable) Var(v Variable) string {
 			return DEFAULT_SYMBOLS[int(v)]
 		}
 	}
-	if int(v)-1024 > len(*t)-1 {
+	if int(v)-1024 > len(t.Symbols)-1 {
 		return fmt.Sprintf("<invalid variable %d>", v)
 	}
-	return (*t)[int(v)-1024]
+	return t.Symbols[int(v)-1024]
 }
 
 func (t *SymbolTable) Clone() *SymbolTable {
@@ -128,31 +132,34 @@ func (t *SymbolTable) Clone() *SymbolTable {
 // [at, len). After the call, the receiver will be left containing
 // the elements [0, at) with its previous capacity unchanged.
 func (t *SymbolTable) SplitOff(at int) *SymbolTable {
-	if at > len(*t) {
+	if at > len(t.Symbols) {
 		panic("split index out of bound")
 	}
 
-	new := make(SymbolTable, len(*t)-at)
-	copy(new, (*t)[at:])
+	new := SymbolTable{
+		Symbols:    make([]string, len(t.Symbols)-at),
+		PublicKeys: t.PublicKeys,
+	}
+	copy(new.Symbols, t.Symbols[at:])
 
-	*t = (*t)[:at]
+	t.Symbols = t.Symbols[:at]
 
 	return &new
 }
 
 func (t *SymbolTable) Len() int {
-	return len(*t)
+	return len(t.Symbols)
 }
 
 // IsDisjoint returns true if receiver has no elements in common with other.
 // This is equivalent to checking for an empty intersection.
 func (t *SymbolTable) IsDisjoint(other *SymbolTable) bool {
-	m := make(map[string]struct{}, len(*t))
-	for _, s := range *t {
+	m := make(map[string]struct{}, len(t.Symbols))
+	for _, s := range t.Symbols {
 		m[s] = struct{}{}
 	}
 
-	for _, os := range *other {
+	for _, os := range other.Symbols {
 		if _, ok := m[os]; ok {
 			return false
 		}
@@ -164,7 +171,7 @@ func (t *SymbolTable) IsDisjoint(other *SymbolTable) bool {
 // Extend insert symbols from the given SymbolTable in the receiving one
 // excluding any Symbols already existing
 func (t *SymbolTable) Extend(other *SymbolTable) {
-	for _, s := range *other {
+	for _, s := range other.Symbols {
 		t.Insert(s)
 	}
 }
@@ -176,17 +183,30 @@ type SymbolDebugger struct {
 func (d SymbolDebugger) Predicate(p Predicate) string {
 	strs := make([]string, len(p.Terms))
 	for i, id := range p.Terms {
-		var s string
-		if sym, ok := id.(String); ok {
-			s = "\"" + d.Str(sym) + "\""
-		} else if variable, ok := id.(Variable); ok {
-			s = "$" + d.Var(variable)
-		} else {
-			s = fmt.Sprintf("%v", id)
-		}
-		strs[i] = s
+		strs[i] = d.Term(id)
 	}
 	return fmt.Sprintf("%s(%s)", d.Str(p.Name), strings.Join(strs, ", "))
+}
+
+func (d SymbolDebugger) Fact(origin Origin, f Fact) string {
+	return fmt.Sprintf("%d: %s", origin, d.Predicate(f.Predicate))
+}
+
+func (d SymbolDebugger) Term(t Term) string {
+	switch t.Type() {
+	case TermTypeString:
+		return "\"" + d.Str(t.(String)) + "\""
+	case TermTypeVariable:
+		return "$" + d.Var(t.(Variable))
+	case TermTypeSet:
+		terms := make([]string, len(t.(TermSet)))
+		for i, term := range t.(TermSet) {
+			terms[i] = d.Term(term)
+		}
+		return "{" + strings.Join(terms, ", ") + "}"
+	default:
+		return fmt.Sprintf("%v", t)
+	}
 }
 
 func (d SymbolDebugger) Rule(r Rule) string {
@@ -239,24 +259,47 @@ func (d SymbolDebugger) Check(c Check) string {
 }
 
 func (d SymbolDebugger) World(w *World) string {
-	facts := make([]string, len(*w.facts))
-	for i, f := range *w.facts {
-		facts[i] = d.Predicate(f.Predicate)
+	facts := make(map[string][]string)
+	for _, f := range *w.facts {
+		originSlice := make([]uint64, 0)
+		for _, o := range f.Origin {
+			originSlice = append(originSlice, o)
+		}
+		sort.Slice(originSlice, func(i, j int) bool {
+			return originSlice[i] < originSlice[j]
+		})
+		origin := fmt.Sprintf("%v", originSlice)
+		facts[origin] = make([]string, 0)
+
+		for _, fact := range f.Facts.Facts {
+			facts[origin] = append(facts[origin], d.Predicate(fact.Predicate))
+		}
+		sort.Strings(facts[origin])
 	}
-	rules := make([]string, len(w.rules))
-	for i, r := range w.rules {
-		rules[i] = d.Rule(r)
+	rules := make(map[string][]string)
+	for _, o := range w.rules {
+		for _, r := range o.Rules {
+			originStr := fmt.Sprintf("%d", r.Origin)
+			if _, ok := rules[originStr]; !ok {
+				rules[originStr] = make([]string, 0)
+			}
+			rules[originStr] = append(rules[originStr], d.Rule(r.Rule))
+		}
+	}
+	for _, r := range rules {
+		sort.Strings(r)
 	}
 
-	sort.Strings(facts)
-	sort.Strings(rules)
 	return fmt.Sprintf("World {{\n\tfacts: %v\n\trules: %v\n}}", facts, rules)
 }
 
-func (d SymbolDebugger) FactSet(s *FactSet) string {
-	strs := make([]string, len(*s))
-	for i, f := range *s {
-		strs[i] = d.Predicate(f.Predicate)
+func (d SymbolDebugger) OriginFacts(s *OriginFacts) string {
+	facts := make([]string, len(*s))
+	for _, f := range *s {
+		for _, fact := range f.Facts.Facts {
+			facts = append(facts, d.Fact(f.Origin, fact))
+		}
 	}
-	return fmt.Sprintf("%v", strs)
+
+	return fmt.Sprintf("%v", facts)
 }

@@ -29,13 +29,16 @@ func TestFamily(t *testing.T) {
 	b := syms.Insert("B")
 	c := syms.Insert("C")
 	d := syms.Insert("D")
-	e := syms.Insert("e")
+	e := syms.Insert("E")
 	parent := syms.Insert("parent")
 	grandparent := syms.Insert("grandparent")
+	syms.Insert("grandchild")
 
-	w.AddFact(Fact{Predicate{parent, []Term{a, b}}})
-	w.AddFact(Fact{Predicate{parent, []Term{b, c}}})
-	w.AddFact(Fact{Predicate{parent, []Term{c, d}}})
+	authorityOrigin := AuthorityOrigin()
+
+	w.AddFact(authorityOrigin, Fact{Predicate{parent, []Term{a, b}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{parent, []Term{b, c}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{parent, []Term{c, d}}})
 
 	r1 := Rule{
 		Head: Predicate{grandparent, []Term{hashVar("grandparent"), hashVar("grandchild")}},
@@ -46,9 +49,9 @@ func TestFamily(t *testing.T) {
 	}
 
 	t.Logf("querying r1: %s", dbg.Rule(r1))
-	queryRuleResult := w.QueryRule(r1, syms)
-	t.Logf("r1 query: %s", dbg.FactSet(queryRuleResult))
-	t.Logf("current facts: %s", dbg.FactSet(w.facts))
+	queryRuleResult := w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, r1, syms)
+	t.Logf("r1 query: %s", dbg.OriginFacts(queryRuleResult))
+	t.Logf("current facts: %s", dbg.OriginFacts(w.facts))
 
 	r2 := Rule{
 		Head: Predicate{grandparent, []Term{hashVar("grandparent"), hashVar("grandchild")}},
@@ -59,25 +62,34 @@ func TestFamily(t *testing.T) {
 	}
 
 	t.Logf("adding r2: %s", dbg.Rule(r2))
-	w.AddRule(r2)
+	w.AddRule(0, TrustedOrigin{Origin: []uint64{0}}, r2)
 	if err := w.Run(syms); err != nil {
 		t.Error(err)
 	}
 
-	w.AddFact(Fact{Predicate{parent, []Term{c, e}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{parent, []Term{c, e}}})
 	if err := w.Run(syms); err != nil {
 		t.Error(err)
 	}
 
-	res := w.Query(Predicate{grandparent, []Term{hashVar("grandparent"), hashVar("grandchild")}})
-	t.Logf("grandparents after inserting parent(C, E): %s", dbg.FactSet(res))
-	expected := &FactSet{
-		Fact{Predicate{grandparent, []Term{a, c}}},
-		Fact{Predicate{grandparent, []Term{b, d}}},
-		Fact{Predicate{grandparent, []Term{b, e}}},
+	res := w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, Rule{
+		Head: Predicate{grandparent, []Term{hashVar("grandparent"), hashVar("grandchild")}},
+		Body: []Predicate{
+			{grandparent, []Term{hashVar("grandparent"), hashVar("grandchild")}},
+		},
+	}, syms)
+	t.Logf("grandparents after inserting parent(C, E): %s", dbg.OriginFacts(res))
+	expected := &OriginFacts{
+		{Origin: authorityOrigin, Facts: &FactSet{
+			Facts: []Fact{
+				{Predicate{grandparent, []Term{a, c}}},
+				{Predicate{grandparent, []Term{b, d}}},
+				{Predicate{grandparent, []Term{b, e}}},
+			},
+		}},
 	}
 	if !res.Equal(expected) {
-		t.Errorf("unexpected result:\nhave %s\n want %s", dbg.FactSet(res), dbg.FactSet(expected))
+		t.Errorf("unexpected result:\nhave %s\n want %s", dbg.OriginFacts(res), dbg.OriginFacts(expected))
 	}
 }
 
@@ -98,33 +110,39 @@ func TestNumbers(t *testing.T) {
 	t2 := syms.Insert("t2")
 	join := syms.Insert("join")
 
-	w.AddFact(Fact{Predicate{t1, []Term{Integer(0), abc}}})
-	w.AddFact(Fact{Predicate{t1, []Term{Integer(1), def}}})
-	w.AddFact(Fact{Predicate{t1, []Term{Integer(2), ghi}}})
-	w.AddFact(Fact{Predicate{t1, []Term{Integer(3), jkl}}})
-	w.AddFact(Fact{Predicate{t1, []Term{Integer(4), mno}}})
+	authorityOrigin := AuthorityOrigin()
 
-	w.AddFact(Fact{Predicate{t2, []Term{Integer(0), aaa, Integer(0)}}})
-	w.AddFact(Fact{Predicate{t2, []Term{Integer(1), bbb, Integer(0)}}})
-	w.AddFact(Fact{Predicate{t2, []Term{Integer(2), ccc, Integer(1)}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{t1, []Term{Integer(0), abc}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{t1, []Term{Integer(1), def}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{t1, []Term{Integer(2), ghi}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{t1, []Term{Integer(3), jkl}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{t1, []Term{Integer(4), mno}}})
 
-	res := w.QueryRule(Rule{
+	w.AddFact(authorityOrigin, Fact{Predicate{t2, []Term{Integer(0), aaa, Integer(0)}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{t2, []Term{Integer(1), bbb, Integer(0)}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{t2, []Term{Integer(2), ccc, Integer(1)}}})
+
+	res := w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, Rule{
 		Head: Predicate{join, []Term{hashVar("left"), hashVar("right")}},
 		Body: []Predicate{
 			{t1, []Term{hashVar("id"), hashVar("left")}},
 			{t2, []Term{hashVar("t2_id"), hashVar("right"), hashVar("id")}},
 		},
 	}, syms)
-	expected := &FactSet{
-		{Predicate{join, []Term{abc, aaa}}},
-		{Predicate{join, []Term{abc, bbb}}},
-		{Predicate{join, []Term{def, ccc}}},
+	expected := &OriginFacts{
+		{Origin: authorityOrigin, Facts: &FactSet{
+			Facts: []Fact{
+				{Predicate{join, []Term{abc, aaa}}},
+				{Predicate{join, []Term{abc, bbb}}},
+				{Predicate{join, []Term{def, ccc}}},
+			},
+		}},
 	}
 	if !expected.Equal(res) {
-		t.Errorf("query failed:\n have: %s\n want: %s", dbg.FactSet(res), dbg.FactSet(expected))
+		t.Errorf("query failed:\n have: %s\n want: %s", dbg.OriginFacts(res), dbg.OriginFacts(expected))
 	}
 
-	res = w.QueryRule(Rule{
+	res = w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, Rule{
 		Head: Predicate{join, []Term{hashVar("left"), hashVar("right")}},
 		Body: []Predicate{
 			{t1, []Term{Variable(1234), hashVar("left")}},
@@ -136,12 +154,16 @@ func TestNumbers(t *testing.T) {
 			BinaryOp{LessThan{}},
 		}},
 	}, syms)
-	expected = &FactSet{
-		{Predicate{join, []Term{abc, aaa}}},
-		{Predicate{join, []Term{abc, bbb}}},
+	expected = &OriginFacts{
+		{Origin: authorityOrigin, Facts: &FactSet{
+			Facts: []Fact{
+				{Predicate{join, []Term{abc, aaa}}},
+				{Predicate{join, []Term{abc, bbb}}},
+			},
+		}},
 	}
 	if !expected.Equal(res) {
-		t.Errorf("constraint query failed:\n have: %s\n want: %s", dbg.FactSet(res), dbg.FactSet(expected))
+		t.Errorf("constraint query failed:\n have: %s\n want: %s", dbg.OriginFacts(res), dbg.OriginFacts(expected))
 	}
 }
 
@@ -155,15 +177,16 @@ func TestString(t *testing.T) {
 	app2 := syms.Insert("app_2")
 	route := syms.Insert("route")
 	suff := syms.Insert("route suffix")
+	authorityOrigin := AuthorityOrigin()
 
-	w.AddFact(Fact{Predicate{route, []Term{Integer(0), app0, syms.Insert("example.com")}}})
-	w.AddFact(Fact{Predicate{route, []Term{Integer(1), app1, syms.Insert("test.com")}}})
-	w.AddFact(Fact{Predicate{route, []Term{Integer(2), app2, syms.Insert("test.fr")}}})
-	w.AddFact(Fact{Predicate{route, []Term{Integer(3), app0, syms.Insert("www.example.com")}}})
-	w.AddFact(Fact{Predicate{route, []Term{Integer(4), app1, syms.Insert("mx.example.com")}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{route, []Term{Integer(0), app0, syms.Insert("example.com")}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{route, []Term{Integer(1), app1, syms.Insert("test.com")}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{route, []Term{Integer(2), app2, syms.Insert("test.fr")}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{route, []Term{Integer(3), app0, syms.Insert("www.example.com")}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{route, []Term{Integer(4), app1, syms.Insert("mx.example.com")}}})
 
-	testSuffix := func(suffix string, syms *SymbolTable) *FactSet {
-		return w.QueryRule(Rule{
+	testSuffix := func(suffix string, syms *SymbolTable) *OriginFacts {
+		return w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, Rule{
 			Head: Predicate{suff, []Term{hashVar("app_id"), Variable(1234)}},
 			Body: []Predicate{{route, []Term{Variable(0), hashVar("app_id"), Variable(1234)}}},
 			Expressions: []Expression{{
@@ -175,19 +198,25 @@ func TestString(t *testing.T) {
 	}
 
 	res := testSuffix(".fr", syms)
-	expected := &FactSet{{Predicate{suff, []Term{app2, syms.Insert("test.fr")}}}}
+	expected := &OriginFacts{{Origin: authorityOrigin, Facts: &FactSet{Facts: []Fact{
+		{Predicate{suff, []Term{app2, syms.Insert("test.fr")}}},
+	}}}}
 	if !expected.Equal(res) {
-		t.Errorf(".fr suffix query failed:\n have: %s\n want: %s", dbg.FactSet(res), dbg.FactSet(expected))
+		t.Errorf(".fr suffix query failed:\n have: %s\n want: %s", dbg.OriginFacts(res), dbg.OriginFacts(expected))
 	}
 
 	res = testSuffix("example.com", syms)
-	expected = &FactSet{
-		{Predicate{suff, []Term{app0, syms.Insert("example.com")}}},
-		{Predicate{suff, []Term{app0, syms.Insert("www.example.com")}}},
-		{Predicate{suff, []Term{app1, syms.Insert("mx.example.com")}}},
+	expected = &OriginFacts{
+		{Origin: authorityOrigin, Facts: &FactSet{
+			Facts: []Fact{
+				{Predicate{suff, []Term{app0, syms.Insert("example.com")}}},
+				{Predicate{suff, []Term{app0, syms.Insert("www.example.com")}}},
+				{Predicate{suff, []Term{app1, syms.Insert("mx.example.com")}}},
+			},
+		}},
 	}
 	if !expected.Equal(res) {
-		t.Errorf("example.com suffix query failed:\n have: %s\n want: %s", dbg.FactSet(res), dbg.FactSet(expected))
+		t.Errorf("example.com suffix query failed:\n have: %s\n want: %s", dbg.OriginFacts(res), dbg.OriginFacts(expected))
 	}
 }
 
@@ -205,11 +234,12 @@ func TestDate(t *testing.T) {
 	x := syms.Insert("x")
 	before := syms.Insert("before")
 	after := syms.Insert("after")
+	authorityOrigin := AuthorityOrigin()
 
-	w.AddFact(Fact{Predicate{x, []Term{Date(t1.Unix()), abc}}})
-	w.AddFact(Fact{Predicate{x, []Term{Date(t3.Unix()), def}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{x, []Term{Date(t1.Unix()), abc}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{x, []Term{Date(t3.Unix()), def}}})
 
-	res := w.QueryRule(Rule{
+	res := w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, Rule{
 		Head: Predicate{before, []Term{Variable(1234), hashVar("val")}},
 		Body: []Predicate{{x, []Term{Variable(1234), hashVar("val")}}},
 		Expressions: []Expression{{
@@ -222,12 +252,14 @@ func TestDate(t *testing.T) {
 			BinaryOp{GreaterOrEqual{}},
 		}},
 	}, syms)
-	expected := &FactSet{{Predicate{before, []Term{Date(t1.Unix()), abc}}}}
+	expected := &OriginFacts{{Origin: authorityOrigin, Facts: &FactSet{Facts: []Fact{
+		{Predicate{before, []Term{Date(t1.Unix()), abc}}},
+	}}}}
 	if !expected.Equal(res) {
-		t.Errorf("before query failed:\n have: %s\n want: %s", dbg.FactSet(res), dbg.FactSet(expected))
+		t.Errorf("before query failed:\n have: %s\n want: %s", dbg.OriginFacts(res), dbg.OriginFacts(expected))
 	}
 
-	res = w.QueryRule(Rule{
+	res = w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, Rule{
 		Head: Predicate{after, []Term{Variable(1234), hashVar("val")}},
 		Body: []Predicate{{x, []Term{Variable(1234), hashVar("val")}}},
 		Expressions: []Expression{{
@@ -240,9 +272,11 @@ func TestDate(t *testing.T) {
 			BinaryOp{GreaterOrEqual{}},
 		}},
 	}, syms)
-	expected = &FactSet{{Predicate{after, []Term{Date(t3.Unix()), def}}}}
+	expected = &OriginFacts{{Origin: authorityOrigin, Facts: &FactSet{Facts: []Fact{
+		{Predicate{after, []Term{Date(t3.Unix()), def}}},
+	}}}}
 	if !expected.Equal(res) {
-		t.Errorf("before query failed:\n have: %s\n want: %s", dbg.FactSet(res), dbg.FactSet(expected))
+		t.Errorf("before query failed:\n have: %s\n want: %s", dbg.OriginFacts(res), dbg.OriginFacts(expected))
 	}
 }
 
@@ -276,11 +310,13 @@ func TestBytes(t *testing.T) {
 	key := syms.Insert("pkey")
 	keyMatch := syms.Insert("pkey match")
 
-	w.AddFact(Fact{Predicate{key, []Term{usr1, Bytes(k1)}}})
-	w.AddFact(Fact{Predicate{key, []Term{usr2, Bytes(k2)}}})
-	w.AddFact(Fact{Predicate{key, []Term{usr3, Bytes(k3)}}})
+	authorityOrigin := AuthorityOrigin()
 
-	res := w.QueryRule(Rule{
+	w.AddFact(authorityOrigin, Fact{Predicate{key, []Term{usr1, Bytes(k1)}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{key, []Term{usr2, Bytes(k2)}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{key, []Term{usr3, Bytes(k3)}}})
+
+	res := w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, Rule{
 		Head: Predicate{keyMatch, []Term{hashVar("usr"), Variable(1)}},
 		Body: []Predicate{{key, []Term{hashVar("usr"), Variable(1)}}},
 		Expressions: []Expression{{
@@ -289,46 +325,56 @@ func TestBytes(t *testing.T) {
 			BinaryOp{Equal{}},
 		}},
 	}, syms)
-	expected := &FactSet{
-		{Predicate{keyMatch, []Term{usr1, Bytes(k1)}}},
+	expected := &OriginFacts{
+		{Origin: authorityOrigin, Facts: &FactSet{Facts: []Fact{
+			{Predicate{keyMatch, []Term{usr1, Bytes(k1)}}},
+		}}},
 	}
 	if !expected.Equal(res) {
-		t.Errorf("key equal query failed:\n have: %s\n want: %s", dbg.FactSet(res), dbg.FactSet(expected))
+		t.Errorf("key equal query failed:\n have: %s\n want: %s", dbg.OriginFacts(res), dbg.OriginFacts(expected))
 	}
 
-	res = w.QueryRule(Rule{
+	res = w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, Rule{
 		Head: Predicate{keyMatch, []Term{hashVar("usr"), Variable(1)}},
 		Body: []Predicate{{key, []Term{hashVar("usr"), Variable(1)}}},
 		Expressions: []Expression{{
-			Value{Set{Bytes(k1), Bytes(k3)}},
+			Value{TermSet{Bytes(k1), Bytes(k3)}},
 			Value{Variable(1)},
 			BinaryOp{Contains{}},
 		}},
 	}, syms)
-	expected = &FactSet{
-		{Predicate{keyMatch, []Term{usr1, Bytes(k1)}}},
-		{Predicate{keyMatch, []Term{usr3, Bytes(k3)}}},
+	expected = &OriginFacts{
+		{Origin: authorityOrigin, Facts: &FactSet{
+			Facts: []Fact{
+				{Predicate{keyMatch, []Term{usr1, Bytes(k1)}}},
+				{Predicate{keyMatch, []Term{usr3, Bytes(k3)}}},
+			},
+		}},
 	}
 	if !expected.Equal(res) {
-		t.Errorf("key in query failed:\n have: %s\n want: %s", dbg.FactSet(res), dbg.FactSet(expected))
+		t.Errorf("key in query failed:\n have: %s\n want: %s", dbg.OriginFacts(res), dbg.OriginFacts(expected))
 	}
 
-	res = w.QueryRule(Rule{
+	res = w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, Rule{
 		Head: Predicate{keyMatch, []Term{hashVar("usr"), Variable(1)}},
 		Body: []Predicate{{key, []Term{hashVar("usr"), Variable(1)}}},
 		Expressions: []Expression{{
-			Value{Set{Bytes(k1)}},
+			Value{TermSet{Bytes(k1)}},
 			Value{Variable(1)},
 			BinaryOp{Contains{}},
 			UnaryOp{Negate{}},
 		}},
 	}, syms)
-	expected = &FactSet{
-		{Predicate{keyMatch, []Term{usr2, Bytes(k2)}}},
-		{Predicate{keyMatch, []Term{usr3, Bytes(k3)}}},
+	expected = &OriginFacts{
+		{Origin: authorityOrigin, Facts: &FactSet{
+			Facts: []Fact{
+				{Predicate{keyMatch, []Term{usr2, Bytes(k2)}}},
+				{Predicate{keyMatch, []Term{usr3, Bytes(k3)}}},
+			},
+		}},
 	}
 	if !expected.Equal(res) {
-		t.Errorf("key not in query failed:\n have: %s\n want: %s", dbg.FactSet(res), dbg.FactSet(expected))
+		t.Errorf("key not in query failed:\n have: %s\n want: %s", dbg.OriginFacts(res), dbg.OriginFacts(expected))
 	}
 }
 
@@ -347,19 +393,21 @@ func TestResource(t *testing.T) {
 	read := syms.Insert("read")
 	write := syms.Insert("write")
 
-	w.AddFact(Fact{Predicate{resource, []Term{ambient, file2}}})
-	w.AddFact(Fact{Predicate{operation, []Term{ambient, write}}})
-	w.AddFact(Fact{Predicate{right, []Term{authority, file1, read}}})
-	w.AddFact(Fact{Predicate{right, []Term{authority, file2, read}}})
-	w.AddFact(Fact{Predicate{right, []Term{authority, file1, write}}})
+	authorityOrigin := AuthorityOrigin()
+
+	w.AddFact(authorityOrigin, Fact{Predicate{resource, []Term{ambient, file2}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{operation, []Term{ambient, write}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{right, []Term{authority, file1, read}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{right, []Term{authority, file2, read}}})
+	w.AddFact(authorityOrigin, Fact{Predicate{right, []Term{authority, file1, write}}})
 
 	check1 := syms.Insert("check1")
-	res := w.QueryRule(Rule{
+	res := w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, Rule{
 		Head: Predicate{check1, []Term{file1}},
 		Body: []Predicate{{resource, []Term{ambient, file1}}},
 	}, syms)
 	if len(*res) > 0 {
-		t.Errorf("unexpected facts: %s", dbg.FactSet(res))
+		t.Errorf("unexpected facts: %s", dbg.OriginFacts(res))
 	}
 
 	check2 := syms.Insert("check2")
@@ -373,27 +421,33 @@ func TestResource(t *testing.T) {
 		},
 	}
 	t.Logf("r2 = %s", dbg.Rule(r2))
-	res = w.QueryRule(r2, syms)
+	res = w.QueryRule(0, TrustedOrigin{Origin: []uint64{0}}, r2, syms)
 	if len(*res) > 0 {
-		t.Errorf("unexpected facts: %s", dbg.FactSet(res))
+		t.Errorf("unexpected facts: %s", dbg.OriginFacts(res))
 	}
 }
 
 func TestSymbolTable(t *testing.T) {
 	s1 := new(SymbolTable)
-	s2 := &SymbolTable{"a", "b", "c"}
-	s3 := &SymbolTable{"d", "e", "f"}
+	s2 := &SymbolTable{
+		Symbols: []string{"a", "b", "c"},
+	}
+	s3 := &SymbolTable{
+		Symbols: []string{"d", "e", "f"},
+	}
 
 	require.True(t, s1.IsDisjoint(s2))
 	s1.Extend(s2)
 	require.False(t, s1.IsDisjoint(s2))
 	require.Equal(t, s2, s1)
 	s1.Extend(s3)
-	require.Equal(t, SymbolTable(append(*s2, *s3...)), *s1)
+	require.Equal(t, SymbolTable{
+		Symbols: append(s2.Symbols, s3.Symbols...),
+	}, *s1)
 
-	require.Equal(t, len(*s2)+len(*s3), s1.Len())
+	require.Equal(t, len(s2.Symbols)+len(s3.Symbols), s1.Len())
 
-	new := s1.SplitOff(len(*s2))
+	new := s1.SplitOff(len(s2.Symbols))
 	require.Equal(t, s3, new)
 	require.Equal(t, s2, s1)
 }
@@ -404,12 +458,16 @@ func TestSymbolTableInsertAndSym(t *testing.T) {
 	require.Equal(t, String(1025), s.Insert("b"))
 	require.Equal(t, String(1026), s.Insert("c"))
 
-	require.Equal(t, &SymbolTable{"a", "b", "c"}, s)
+	require.Equal(t, &SymbolTable{
+		Symbols: []string{"a", "b", "c"},
+	}, s)
 
 	require.Equal(t, String(1024), s.Insert("a"))
 	require.Equal(t, String(1027), s.Insert("d"))
 
-	require.Equal(t, &SymbolTable{"a", "b", "c", "d"}, s)
+	require.Equal(t, &SymbolTable{
+		Symbols: []string{"a", "b", "c", "d"},
+	}, s)
 
 	require.Equal(t, String(1024), s.Sym("a"))
 	require.Equal(t, String(1025), s.Sym("b"))
@@ -430,8 +488,12 @@ func TestSymbolTableClone(t *testing.T) {
 	s2.Insert("d")
 	s2.Insert("e")
 
-	require.Equal(t, &SymbolTable{"a", "b", "c"}, s)
-	require.Equal(t, &SymbolTable{"a", "b", "c", "d", "e"}, s2)
+	require.Equal(t, &SymbolTable{
+		Symbols: []string{"a", "b", "c"},
+	}, s)
+	require.Equal(t, &SymbolTable{
+		Symbols: []string{"a", "b", "c", "d", "e"},
+	}, s2)
 }
 
 func TestSetEqual(t *testing.T) {
@@ -439,38 +501,38 @@ func TestSetEqual(t *testing.T) {
 
 	testCases := []struct {
 		desc  string
-		s1    Set
-		s2    Set
+		s1    TermSet
+		s2    TermSet
 		equal bool
 	}{
 		{
 			desc:  "equal with same values in same order",
-			s1:    Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
-			s2:    Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
+			s1:    TermSet{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
+			s2:    TermSet{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
 			equal: true,
 		},
 		{
 			desc:  "equal with same values different order",
-			s1:    Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
-			s2:    Set{syms.Insert("b"), syms.Insert("c"), syms.Insert("a")},
+			s1:    TermSet{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
+			s2:    TermSet{syms.Insert("b"), syms.Insert("c"), syms.Insert("a")},
 			equal: true,
 		},
 		{
 			desc:  "not equal when length mismatch",
-			s1:    Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
-			s2:    Set{syms.Insert("a"), syms.Insert("b")},
+			s1:    TermSet{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
+			s2:    TermSet{syms.Insert("a"), syms.Insert("b")},
 			equal: false,
 		},
 		{
 			desc:  "not equal when length mismatch",
-			s1:    Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
-			s2:    Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c"), syms.Insert("d")},
+			s1:    TermSet{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
+			s2:    TermSet{syms.Insert("a"), syms.Insert("b"), syms.Insert("c"), syms.Insert("d")},
 			equal: false,
 		},
 		{
 			desc:  "not equal when same length but different values",
-			s1:    Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
-			s2:    Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("d")},
+			s1:    TermSet{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")},
+			s2:    TermSet{syms.Insert("a"), syms.Insert("b"), syms.Insert("d")},
 			equal: false,
 		},
 	}
@@ -537,12 +599,15 @@ func TestWorldRunLimits(t *testing.T) {
 		},
 	}
 
+	authorityOrigin := AuthorityOrigin()
+
 	for _, tc := range testCases {
 		w := NewWorld(tc.opts...)
+		t.Logf("running test case %s\n", tc.desc)
 
-		w.AddFact(Fact{Predicate{parent, []Term{a, b}}})
-		w.AddFact(Fact{Predicate{parent, []Term{b, c}}})
-		w.AddFact(Fact{Predicate{parent, []Term{c, d}}})
+		w.AddFact(authorityOrigin, Fact{Predicate{parent, []Term{a, b}}})
+		w.AddFact(authorityOrigin, Fact{Predicate{parent, []Term{b, c}}})
+		w.AddFact(authorityOrigin, Fact{Predicate{parent, []Term{c, d}}})
 
 		r1 := Rule{
 			Head: Predicate{grandparent, []Term{hashVar("grandparent"), hashVar("grandchild")}},
@@ -552,7 +617,7 @@ func TestWorldRunLimits(t *testing.T) {
 			},
 		}
 
-		w.AddRule(r1)
+		w.AddRule(0, TrustedOrigin{Origin: []uint64{0}}, r1)
 		require.Equal(t, tc.expectedErr, w.Run(syms))
 	}
 }
