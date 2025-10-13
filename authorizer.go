@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/biscuit-auth/biscuit-go/v2/datalog"
-	"github.com/biscuit-auth/biscuit-go/v2/pb"
+	"github.com/eclipse-biscuit/biscuit-go/v2/datalog"
+	"github.com/eclipse-biscuit/biscuit-go/v2/pb"
 	"google.golang.org/protobuf/proto"
 )
 

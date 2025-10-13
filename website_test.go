@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/biscuit-auth/biscuit-go/v2"
-	"github.com/biscuit-auth/biscuit-go/v2/parser"
+	"github.com/eclipse-biscuit/biscuit-go/v2"
+	"github.com/eclipse-biscuit/biscuit-go/v2/parser"
 )
 
 // code examples for the documentation at https://www.biscuitsec.org
-// if these functions change, please send a PR at https://github.com/biscuit-auth/website
+// if these functions change, please send a PR at https://github.com/eclipse-biscuit/website
 
 func CreateKey() (ed25519.PublicKey, ed25519.PrivateKey) {
 	rng := rand.Reader

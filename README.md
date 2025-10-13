@@ -1,13 +1,13 @@
 
 # biscuit-go
 
-biscuit-go is an implementation of [Biscuit](https://github.com/biscuit-auth/biscuit) in Go. It aims to be fully compatible with other existing implementations, so that tokens issued by, for example, the Rust version, could be validated by this library and vice versa.
+biscuit-go is an implementation of [Biscuit](https://github.com/eclipse-biscuit/biscuit) in Go. It aims to be fully compatible with other existing implementations, so that tokens issued by, for example, the Rust version, could be validated by this library and vice versa.
 
 ## Documentation and specifications
 
 - [biscuit website](https://www.biscuitsec.org) for documentation and examples
-- [biscuit specification](https://github.com/biscuit-auth/biscuit)
-- [biscuit-rust](https://github.com/biscuit-auth/biscuit-rust) for some more technical details.
+- [biscuit specification](https://github.com/eclipse-biscuit/biscuit)
+- [biscuit-rust](https://github.com/eclipse-biscuit/biscuit-rust) for some more technical details.
 
 ## Usage
 

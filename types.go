@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/biscuit-auth/biscuit-go/v2/datalog"
+	"github.com/eclipse-biscuit/biscuit-go/v2/datalog"
 )
 
 const MinSchemaVersion uint32 = 3
