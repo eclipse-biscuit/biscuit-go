@@ -619,3 +619,114 @@ func TestInvalidRuleGeneration(t *testing.T) {
 	t.Log(verifier.PrintWorld())
 	require.Error(t, err)
 }
+
+func TestBlockVersionMinimization(t *testing.T) {
+	rng := rand.Reader
+	_, privateRoot, _ := ed25519.GenerateKey(rng)
+
+	t.Run("block without NotEqual uses version 3", func(t *testing.T) {
+		builder := NewBuilder(privateRoot)
+		builder.AddAuthorityFact(Fact{
+			Predicate: Predicate{Name: "right", IDs: []Term{String("/a/file1"), String("read")}},
+		})
+		builder.AddAuthorityCheck(Check{Queries: []Rule{
+			{
+				Head: Predicate{Name: "check1"},
+				Body: []Predicate{
+					{Name: "operation", IDs: []Term{String("read")}},
+				},
+				Expressions: []Expression{
+					{
+						Value{Variable("x")},
+						Value{Integer(5)},
+						BinaryEqual, // v3 operator
+					},
+				},
+			},
+		}})
+
+		b, err := builder.Build()
+		require.NoError(t, err)
+		require.Equal(t, uint32(3), b.authority.version, "block without NotEqual should be version 3")
+	})
+
+	t.Run("block with NotEqual uses version 4", func(t *testing.T) {
+		builder := NewBuilder(privateRoot)
+		builder.AddAuthorityFact(Fact{
+			Predicate: Predicate{Name: "right", IDs: []Term{String("/a/file1"), String("read")}},
+		})
+		builder.AddAuthorityCheck(Check{Queries: []Rule{
+			{
+				Head: Predicate{Name: "check1"},
+				Body: []Predicate{
+					{Name: "operation", IDs: []Term{String("read")}},
+				},
+				Expressions: []Expression{
+					{
+						Value{Variable("x")},
+						Value{Integer(5)},
+						BinaryNotEqual, // v4 operator
+					},
+				},
+			},
+		}})
+
+		b, err := builder.Build()
+		require.NoError(t, err)
+		require.Equal(t, uint32(4), b.authority.version, "block with NotEqual should be version 4")
+	})
+
+	t.Run("appended block version calculated independently", func(t *testing.T) {
+		// Create a v3 authority block
+		builder := NewBuilder(privateRoot)
+		builder.AddAuthorityFact(Fact{
+			Predicate: Predicate{Name: "right", IDs: []Term{String("/a/file1"), String("read")}},
+		})
+
+		b, err := builder.Build()
+		require.NoError(t, err)
+		require.Equal(t, uint32(3), b.authority.version, "authority block should be version 3")
+
+		// Add a block with NotEqual (v4 feature)
+		blockBuilder := b.CreateBlock()
+		blockBuilder.AddCheck(Check{Queries: []Rule{
+			{
+				Head: Predicate{Name: "check1"},
+				Body: []Predicate{
+					{Name: "operation", IDs: []Term{Variable("op")}},
+				},
+				Expressions: []Expression{
+					{
+						Value{Variable("op")},
+						Value{String("write")},
+						BinaryNotEqual,
+					},
+				},
+			},
+		}})
+
+		block := blockBuilder.Build()
+		require.Equal(t, uint32(4), block.version, "appended block with NotEqual should be version 4")
+	})
+
+	t.Run("rule with NotEqual triggers version 4", func(t *testing.T) {
+		builder := NewBuilder(privateRoot)
+		builder.AddAuthorityRule(Rule{
+			Head: Predicate{Name: "result", IDs: []Term{Variable("x")}},
+			Body: []Predicate{
+				{Name: "input", IDs: []Term{Variable("x")}},
+			},
+			Expressions: []Expression{
+				{
+					Value{Variable("x")},
+					Value{Integer(0)},
+					BinaryNotEqual,
+				},
+			},
+		})
+
+		b, err := builder.Build()
+		require.NoError(t, err)
+		require.Equal(t, uint32(4), b.authority.version, "block with rule using NotEqual should be version 4")
+	})
+}

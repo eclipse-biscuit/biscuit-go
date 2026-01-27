@@ -331,7 +331,7 @@ func (v *authorizer) LoadPolicies(authorizerPolicies []byte) error {
 	}
 
 	switch pbPolicies.GetVersion() {
-	case 3:
+	case 3, 4:
 		return v.loadPoliciesV2(pbPolicies)
 	default:
 		return fmt.Errorf("verifier: unsupported policies version %d", pbPolicies.GetVersion())
@@ -461,7 +461,7 @@ func (v *authorizer) SerializePolicies() ([]byte, error) {
 		protoPolicies[i] = protoPolicy
 	}
 
-	version := MaxSchemaVersion
+	version := v.calculatePoliciesVersion()
 	return proto.Marshal(&pb.AuthorizerPolicies{
 		Symbols:  *v.symbols.Clone(),
 		Version:  proto.Uint32(version),
@@ -470,4 +470,36 @@ func (v *authorizer) SerializePolicies() ([]byte, error) {
 		Checks:   protoChecks,
 		Policies: protoPolicies,
 	})
+}
+
+// calculatePoliciesVersion determines the minimum version required for the authorizer's rules, checks and policies.
+func (v *authorizer) calculatePoliciesVersion() uint32 {
+	// Check world rules
+	for _, rule := range v.world.Rules() {
+		if expressionsRequireV4(rule.Expressions) {
+			return 4
+		}
+	}
+
+	// Check checks
+	for _, check := range v.checks {
+		for _, query := range check.Queries {
+			dlRule := query.convert(v.symbols)
+			if expressionsRequireV4(dlRule.Expressions) {
+				return 4
+			}
+		}
+	}
+
+	// Check policies
+	for _, policy := range v.policies {
+		for _, query := range policy.Queries {
+			dlRule := query.convert(v.symbols)
+			if expressionsRequireV4(dlRule.Expressions) {
+				return 4
+			}
+		}
+	}
+
+	return 3
 }

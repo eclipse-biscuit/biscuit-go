@@ -381,6 +381,8 @@ func tokenExprBinaryToProtoExprBinary(op datalog.BinaryOp) (*pb.OpBinary, error)
 		pbBinaryKind = pb.OpBinary_Intersection
 	case datalog.BinaryUnion:
 		pbBinaryKind = pb.OpBinary_Union
+	case datalog.BinaryNotEqual:
+		pbBinaryKind = pb.OpBinary_NotEqual
 	default:
 		return nil, fmt.Errorf("biscuit: unsupported BinaryOpFunc type: %v", op.BinaryOpFunc.Type())
 	}
@@ -424,6 +426,8 @@ func protoExprBinaryToTokenExprBinary(op *pb.OpBinary) (datalog.BinaryOpFunc, er
 		binaryOp = datalog.Intersection{}
 	case pb.OpBinary_Union:
 		binaryOp = datalog.Union{}
+	case pb.OpBinary_NotEqual:
+		binaryOp = datalog.NotEqual{}
 	default:
 		return nil, fmt.Errorf("biscuit: unsupported proto OpBinary type: %v", op.Kind)
 	}

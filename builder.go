@@ -20,6 +20,39 @@ var (
 	ErrInvalidBlockIndex = errors.New("biscuit: invalid block index")
 )
 
+// calculateMinVersion determines the minimum block version required for a set of rules and checks.
+// Version 4 features include: NotEqual operator (!=)
+func calculateMinVersion(rules []datalog.Rule, checks []datalog.Check) uint32 {
+	for _, rule := range rules {
+		if expressionsRequireV4(rule.Expressions) {
+			return 4
+		}
+	}
+	for _, check := range checks {
+		for _, query := range check.Queries {
+			if expressionsRequireV4(query.Expressions) {
+				return 4
+			}
+		}
+	}
+	return 3
+}
+
+// expressionsRequireV4 checks if any expression uses v4 features
+func expressionsRequireV4(expressions []datalog.Expression) bool {
+	for _, expr := range expressions {
+		for _, op := range expr {
+			if op.Type() == datalog.OpTypeBinary {
+				binaryOp := op.(datalog.BinaryOp)
+				if binaryOp.BinaryOpFunc.Type() == datalog.BinaryNotEqual {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 type Builder interface {
 	AddBlock(block ParsedBlock) error
 	AddAuthorityFact(fact Fact) error
@@ -138,7 +171,7 @@ func (b *builderOptions) Build() (*Biscuit, error) {
 			rules:   b.rules,
 			checks:  b.checks,
 			context: b.context,
-			version: MaxSchemaVersion,
+			version: calculateMinVersion(b.rules, b.checks),
 		},
 		opts...)
 }
@@ -308,6 +341,6 @@ func (b *blockBuilder) Build() *Block {
 		rules:   rules,
 		checks:  checks,
 		context: b.context,
-		version: MaxSchemaVersion,
+		version: calculateMinVersion(rules, checks),
 	}
 }

@@ -162,6 +162,26 @@ func getRuleTestCases() []testCase {
 			ExpectFailure: true,
 		},
 		{
+			Input: `rule1("a") <- body1("b"), $0 != 5`,
+			Expected: biscuit.Rule{
+				Head: biscuit.Predicate{
+					Name: "rule1",
+					IDs:  []biscuit.Term{biscuit.String("a")},
+				},
+				Body: []biscuit.Predicate{{
+					Name: "body1",
+					IDs:  []biscuit.Term{biscuit.String("b")},
+				}},
+				Expressions: []biscuit.Expression{
+					{
+						biscuit.Value{Term: biscuit.Variable("0")},
+						biscuit.Value{Term: biscuit.Integer(5)},
+						biscuit.BinaryNotEqual,
+					},
+				},
+			},
+		},
+		{
 			Input: `rule1("a") <- body1("b"), $0 > 0, $1 < 1, $2 >= 2, $3 <= 3, $4 == 4, [1, 2, 3].contains($5), ![4,5,6].contains($6)`,
 			Expected: biscuit.Rule{
 				Head: biscuit.Predicate{

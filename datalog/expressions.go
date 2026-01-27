@@ -280,6 +280,8 @@ func (op BinaryOp) Print(left, right string) string {
 		out = fmt.Sprintf("%s >= %s", left, right)
 	case BinaryEqual:
 		out = fmt.Sprintf("%s == %s", left, right)
+	case BinaryNotEqual:
+		out = fmt.Sprintf("%s != %s", left, right)
 	case BinaryContains:
 		out = fmt.Sprintf("%s.contains(%s)", left, right)
 	case BinaryPrefix:
@@ -335,6 +337,7 @@ const (
 	BinaryOr
 	BinaryIntersection
 	BinaryUnion
+	BinaryNotEqual
 )
 
 // LessThan returns true when left is less than right.
@@ -467,6 +470,34 @@ func (Equal) Eval(left Term, right Term, _ *SymbolTable) (Term, error) {
 	}
 
 	return Bool(left.Equal(right)), nil
+}
+
+// NotEqual returns true when left and right are not equal.
+// It requires left and right to have the same concrete type
+// and only accepts Integer, Bytes, String, Date, Bool or Set.
+type NotEqual struct{}
+
+func (NotEqual) Type() BinaryOpType {
+	return BinaryNotEqual
+}
+func (NotEqual) Eval(left Term, right Term, _ *SymbolTable) (Term, error) {
+	if g, w := left.Type(), right.Type(); g != w {
+		return nil, fmt.Errorf("datalog: NotEqual type mismatch: %d != %d", g, w)
+	}
+
+	switch left.Type() {
+	case TermTypeInteger:
+	case TermTypeBytes:
+	case TermTypeString:
+	case TermTypeDate:
+	case TermTypeBool:
+	case TermTypeSet:
+
+	default:
+		return nil, fmt.Errorf("datalog: unexpected NotEqual value type: %d", left.Type())
+	}
+
+	return Bool(!left.Equal(right)), nil
 }
 
 // Contains returns true when the right value exists in the left Set.

@@ -118,6 +118,7 @@ message OpBinary {
     Or = 14;
     Intersection = 15;
     Union = 16;
+    NotEqual = 17;
   }
 
   required Kind kind = 1;

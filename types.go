@@ -14,7 +14,7 @@ import (
 )
 
 const MinSchemaVersion uint32 = 3
-const MaxSchemaVersion uint32 = 3
+const MaxSchemaVersion uint32 = 4
 
 // defaultSymbolTable predefines some symbols available in every implementation, to avoid
 // transmitting them with every token
@@ -376,6 +376,7 @@ const (
 	BinaryOr
 	BinaryIntersection
 	BinaryUnion
+	BinaryNotEqual
 )
 
 func (BinaryOp) Type() OpType {
@@ -417,6 +418,8 @@ func (op BinaryOp) convert(symbols *datalog.SymbolTable) datalog.Op {
 		return datalog.BinaryOp{BinaryOpFunc: datalog.Intersection{}}
 	case BinaryUnion:
 		return datalog.BinaryOp{BinaryOpFunc: datalog.Union{}}
+	case BinaryNotEqual:
+		return datalog.BinaryOp{BinaryOpFunc: datalog.NotEqual{}}
 	default:
 		panic(fmt.Sprintf("biscuit: cannot convert invalid binary op type: %v", op))
 	}
@@ -458,6 +461,8 @@ func fromDatalogBinaryOp(symbols *datalog.SymbolTable, dbBinary datalog.BinaryOp
 		return BinaryIntersection, nil
 	case datalog.BinaryUnion:
 		return BinaryUnion, nil
+	case datalog.BinaryNotEqual:
+		return BinaryNotEqual, nil
 	default:
 		return BinaryUndefined, fmt.Errorf("unsupported datalog binary op: %v", dbBinary.BinaryOpFunc.Type())
 	}
