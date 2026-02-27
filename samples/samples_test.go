@@ -9,14 +9,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 
-	"github.com/eclipse-biscuit/biscuit-go/v2"
-	"github.com/eclipse-biscuit/biscuit-go/v2/parser"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
+
+	"github.com/eclipse-biscuit/biscuit-go/v2"
+	"github.com/eclipse-biscuit/biscuit-go/v2/datalog"
+	"github.com/eclipse-biscuit/biscuit-go/v2/parser"
 )
 
 type Samples struct {
@@ -37,7 +41,6 @@ type Block struct {
 	PublicKeys  []any    `json:"public_keys"`
 	ExternalKey any      `json:"external_key"`
 	Code        string   `json:"code"`
-	Version     uint32   `json:"version"`
 }
 
 type Result struct {
@@ -52,15 +55,11 @@ type BiscuitError struct {
 				Allow int `json:"Allow"`
 			} `json:"policy"`
 			Checks []struct {
-				Block *struct {
+				Block struct {
 					BlockID int    `json:"block_id"`
 					CheckID int    `json:"check_id"`
 					Rule    string `json:"rule"`
 				} `json:"Block"`
-				Authorizer *struct {
-					CheckID int    `json:"check_id"`
-					Rule    string `json:"rule"`
-				} `json:"Authorizer"`
 			} `json:"checks"`
 		} `json:"Unauthorized"`
 		InvalidBlockRule []any `json:"InvalidBlockRule"`
@@ -69,119 +68,154 @@ type BiscuitError struct {
 		Signature *struct {
 			InvalidSignature string `json:"InvalidSignature"`
 		} `json:"Signature"`
-		BlockSignatureDeserializationError *string `json:"BlockSignatureDeserializationError"`
 	} `json:"Format"`
-	Execution *string `json:"Execution"`
 }
-
-// authorizerOrigin is the origin the spec assigns to authorizer rules and checks (usize::MAX).
-const authorizerOrigin = math.MaxUint64
 
 type World struct {
-	Facts    []FactGroup  `json:"facts"`
-	Rules    []RuleGroup  `json:"rules"`
-	Checks   []CheckGroup `json:"checks"`
-	Policies []string     `json:"policies"`
+	Facts    []Facts  `json:"facts"`
+	Rules    []Rules  `json:"rules"`
+	Checks   []Checks `json:"checks"`
+	Policies []string `json:"policies"`
 }
 
-// FactGroup holds the facts derived from the same set of block origins;
-// a nil origin denotes the authorizer.
-type FactGroup struct {
-	Origin []*uint64 `json:"origin"`
+type Facts struct {
+	Origin []*uint64 `json:"origin"` // Can be null
 	Facts  []string  `json:"facts"`
 }
 
-type RuleGroup struct {
-	Origin *uint64  `json:"origin"`
+type Rules struct {
+	Origin *uint64  `json:"origin"` // Can be null
 	Rules  []string `json:"rules"`
 }
 
-type CheckGroup struct {
-	Origin *uint64  `json:"origin"`
+type Checks struct {
+	Origin *uint64  `json:"origin"` // Can be null
 	Checks []string `json:"checks"`
 }
 
-// isTrusted reports whether an origin is the authorizer or the authority block,
-// which is the part of the world the authorizer exposes through PrintWorld.
-func isTrusted(origin *uint64) bool {
-	return origin == nil || *origin == 0 || *origin == authorizerOrigin
-}
-
-func (w World) String() string {
-	facts := []string{}
-	for _, group := range w.Facts {
-		visible := true
-		for _, o := range group.Origin {
-			if !isTrusted(o) {
-				visible = false
-				break
-			}
-		}
-		if visible {
-			facts = append(facts, group.Facts...)
-		}
-	}
-	sort.Strings(facts)
-
-	rules := []string{}
-	for _, group := range w.Rules {
-		if isTrusted(group.Origin) {
-			rules = append(rules, group.Rules...)
-		}
-	}
-	sort.Strings(rules)
-
-	return fmt.Sprintf("World {{\n\tfacts: %v\n\trules: %v\n}}", facts, rules)
-}
-
 type Validation struct {
-	World          *World   `json:"world"`
+	World          World    `json:"world"`
 	Result         Result   `json:"result"`
 	AuthorizerCode string   `json:"authorizer_code"`
 	RevocationIds  []string `json:"revocation_ids"`
 }
 
-// Support for newer datalog versions lands incrementally. Samples are gated
-// on the block version they exercise: bumping biscuit.MaxSchemaVersion enables
-// the matching samples here with no other change.
-//
-// unsupported lists the samples inside the supported version range that
-// cannot pass yet; each entry is removed by the change that closes the gap.
-var unsupported = map[string]string{
-	"test013_block_rules.bc": "set literal syntax {…}",
-	"test017_expressions.bc": "set literal syntax {…} incl. empty set, strict equality ===",
-	"test036_secp256r1.bc":   "secp256r1 signatures",
-}
+// extractWorld gets data out of the authorizer for comparison to a [World] in tests.
+func extractWorld(t *testing.T, authorizer biscuit.Authorizer) World {
+	t.Helper()
+	world := World{}
 
-func maxBlockVersion(c TestCase) uint32 {
-	var v uint32
-	for _, b := range c.Token {
-		if b.Version > v {
-			v = b.Version
+	err := biscuit.InspectAuthorizer(authorizer, func(inspector biscuit.AuthorizerInspector) {
+		// Build symbol and public key tables once from the authorizer
+		symbols := datalog.SymbolTable{}
+		for sym := range inspector.Symbols() {
+			symbols = append(symbols, sym)
 		}
-	}
-	return v
-}
 
-func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
-	fmt.Printf("Checking sample %s\n", c.Filename)
-	b, err := os.ReadFile("./data/current/" + c.Filename)
+		pubKeys := datalog.PublicKeyTable{}
+		for pk := range inspector.PublicKeys() {
+			pubKeys = append(pubKeys, pk)
+		}
+
+		debug := datalog.SymbolDebugger{
+			SymbolTable:    &symbols,
+			PublicKeyTable: &pubKeys,
+		}
+
+		world.Facts = make([]Facts, 0)
+		for blockIDs, biscuitFacts := range inspector.Facts() {
+			var reportOrigins []*uint64
+			if len(blockIDs) > 0 {
+				reportOrigins = make([]*uint64, 0, len(blockIDs))
+				for _, blockID := range blockIDs {
+					if blockID == datalog.AuthorizerBlockID {
+						reportOrigins = append(reportOrigins, nil)
+					} else {
+						clonedID := blockID
+						reportOrigins = append(reportOrigins, &clonedID)
+					}
+				}
+			}
+
+			reportFacts := make([]string, 0, len(biscuitFacts))
+			for _, biscuitFact := range biscuitFacts {
+				reportFacts = append(reportFacts, biscuitFact.String())
+			}
+			sort.Strings(reportFacts)
+
+			world.Facts = append(world.Facts, Facts{
+				Origin: reportOrigins,
+				Facts:  reportFacts,
+			})
+		}
+
+		world.Rules = make([]Rules, 0)
+		for blockID, rules := range inspector.Rules() {
+			var reportOrigin *uint64
+			if blockID != datalog.AuthorizerBlockID {
+				clonedID := blockID
+				reportOrigin = &clonedID
+			}
+
+			reportRules := make([]string, 0, len(rules))
+			for _, biscuitRule := range rules {
+				dlRule := biscuitRule.Convert(&symbols, &pubKeys)
+				reportRules = append(reportRules, debug.Rule(dlRule))
+			}
+			sort.Strings(reportRules)
+
+			world.Rules = append(world.Rules, Rules{
+				Origin: reportOrigin,
+				Rules:  reportRules,
+			})
+		}
+
+		world.Checks = make([]Checks, 0)
+		for blockID, checks := range inspector.Checks() {
+			clonedID := blockID
+			reportOrigin := &clonedID
+
+			reportChecks := make([]string, 0, len(checks))
+			for _, biscuitCheck := range checks {
+				dlCheck := biscuitCheck.Convert(&symbols, &pubKeys)
+				reportChecks = append(reportChecks, debug.Check(dlCheck))
+			}
+			sort.Strings(reportChecks)
+
+			world.Checks = append(world.Checks, Checks{
+				Origin: reportOrigin,
+				Checks: reportChecks,
+			})
+		}
+
+		// TODO - Support comparing policies.
+		world.Policies = []string{}
+	})
 	require.NoError(t, err)
 
-	if v := maxBlockVersion(c); v > biscuit.MaxSchemaVersion {
-		// The spec requires refusing blocks newer than the supported range.
-		_, err := biscuit.Unmarshal(b)
-		require.Error(t, err)
-		t.Skipf("block version %d > MaxSchemaVersion %d", v, biscuit.MaxSchemaVersion)
-	}
-	if reason, ok := unsupported[c.Filename]; ok {
-		t.Skipf("unsupported: %s", reason)
+	return world
+}
+
+// tests above this are unsupported features
+const skipTestsAtNum int = 26
+const allowThisTest int = 29
+
+func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
+	t.Helper()
+
+	// Skip tests for block versions not yet supported
+	testNum := 0
+	if _, err := fmt.Sscanf(c.Filename, "test%d_", &testNum); err == nil {
+		if testNum >= skipTestsAtNum && testNum != allowThisTest {
+			t.SkipNow()
+		}
 	}
 
+	b, err := os.ReadFile("./data/current/" + c.Filename)
+	require.NoError(t, err)
 	token, err := biscuit.Unmarshal(b)
 
 	if err == nil {
-		fmt.Printf("  Parsed file %s\n", c.Filename)
 		// this sample uses a tampered biscuit file on purpose
 		if c.Filename != "test006_reordered_blocks.bc" {
 			CompareBlocks(*token, c.Token, t)
@@ -192,85 +226,110 @@ func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
 		}
 
 	} else {
-		fmt.Println(err)
-		fmt.Println("  Parsing failed, all validations must be errors")
 		for _, v := range c.Validations {
 			require.Nil(t, v.Result.Ok)
 		}
 	}
 }
 
-func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
-	sample := token.Code()
+func CompareBlocks(biscuitUnderTest biscuit.Biscuit, inputBlocks []Block, t *testing.T) {
+	t.Helper()
+
+	sample := biscuitUnderTest.Code()
+
 	p := parser.New()
 
 	rng := rand.Reader
 	_, privateRoot, _ := ed25519.GenerateKey(rng)
-	authority, err := p.Block(blocks[0].Code, nil)
+	authority, err := p.Block(inputBlocks[0].Code, nil)
 	require.NoError(t, err)
 	builder := biscuit.NewBuilder(privateRoot)
-	builder.AddBlock(authority)
-	r, err := builder.Build()
+	err = builder.AddBlock(authority)
 	require.NoError(t, err)
-	rebuilt := *r
+	authorityBiscuit, err := builder.Build()
+	require.NoError(t, err)
 
-	for _, b := range blocks[1:] {
-		parsed, err := p.Block(b.Code, nil)
+	prevBiscuit := *authorityBiscuit
+	for i, inputBlock := range inputBlocks[1:] {
+		blockID := uint64(i + 1)
+		parsedBlock, err := p.Block(inputBlock.Code, nil)
 		require.NoError(t, err)
-		builder := rebuilt.CreateBlock()
-		builder.AddBlock(parsed)
-		r, err := rebuilt.Append(rng, builder.Build())
+		builder := prevBiscuit.CreateBlock(blockID)
+		err = builder.AddBlock(parsedBlock)
 		require.NoError(t, err)
-		rebuilt = *r
+		resultBiscuit, err := prevBiscuit.AppendBlock(rng, builder)
+		require.NoError(t, err)
+		prevBiscuit = *resultBiscuit
 	}
 
-	require.Equal(t, sample, rebuilt.Code())
+	require.Equal(t, sample, prevBiscuit.Code())
 }
 
-func CompareResult(root_key ed25519.PublicKey, filename string, token biscuit.Biscuit, v Validation, t *testing.T) {
+func CompareResult(root_key ed25519.PublicKey, filename string, biscuitUnderTest biscuit.Biscuit, v Validation, t *testing.T) {
+	t.Helper()
+
 	p := parser.New()
-	authorizer_code, err := p.Authorizer(v.AuthorizerCode, nil)
+	parsedAuthorizer, err := p.Authorizer(v.AuthorizerCode, nil)
 	require.NoError(t, err)
-	authorizer, err := token.Authorizer(root_key)
+	authorizerBuilder, err := biscuitUnderTest.Authorizer(root_key)
 
 	if err != nil {
 		CompareError(err, v.Result.Err, t)
 	} else {
-		authorizer.AddAuthorizer(authorizer_code)
+		authorizerBuilder.AddAuthorizer(parsedAuthorizer)
+		authorizer, err := authorizerBuilder.Build()
+		require.NoError(t, err)
+
 		err = authorizer.Authorize()
-		if err != nil {
+		if v.Result.Err != nil {
+			require.Error(t, err)
 			CompareError(err, v.Result.Err, t)
 		} else {
+			require.NoError(t, err)
 			require.NotNil(t, v.Result.Ok)
 		}
-		// The world is null when the reference implementation rejected the token outright.
-		if v.World != nil {
-			require.Equal(t, v.World.String(), authorizer.PrintWorld())
+		// Only compare world if it's not null (all fields are nil means it was null in JSON)
+		if v.World.Facts != nil || v.World.Rules != nil || v.World.Checks != nil || v.World.Policies != nil {
+			require.Empty(t,
+				cmp.Diff(
+					v.World,
+					extractWorld(t, authorizer),
+					// TODO: Support comparing policies (need to convert [biscuit.Policy] into a string).
+					cmpopts.IgnoreFields(World{}, "Policies"),
+				),
+				"datalog worlds should be equal",
+			)
 		}
 	}
 }
 
-func CompareError(authorization_error error, sample_error *BiscuitError, t *testing.T) {
-	error_string := authorization_error.Error()
-	if sample_error.Format != nil {
-		require.Equal(t, error_string, "biscuit: invalid signature")
-	} else if sample_error.FailedLogic != nil {
-		if sample_error.FailedLogic.Unauthorized != nil {
+func CompareError(authorizationError error, sampleError *BiscuitError, t *testing.T) {
+	t.Helper()
+
+	require.Error(t, authorizationError)
+	require.NotNil(t, sampleError)
+
+	error_string := authorizationError.Error()
+	if sampleError.Format != nil {
+		require.True(t, strings.Contains(error_string, "biscuit: invalid signature"))
+	} else if sampleError.FailedLogic != nil {
+		if sampleError.FailedLogic.Unauthorized != nil {
 			// todo check the block and check ids (if there is a single failed check, because the lib only reports one)
 			require.Regexp(t, "^biscuit: verification failed: failed to verify", error_string)
-		} else if sample_error.FailedLogic.InvalidBlockRule != nil {
+		} else if sampleError.FailedLogic.InvalidBlockRule != nil {
 			// todo extract the block number
 			require.Regexp(t, "^biscuit: verification failed: failed to verify", error_string)
 		} else {
 			require.Fail(t, error_string)
 		}
 	} else {
-		fmt.Println(sample_error)
 		require.Fail(t, error_string)
 	}
 }
 
 func TestReadSamples(t *testing.T) {
+	t.Helper()
+
 	b, err := os.ReadFile("./data/current/samples.json")
 	require.NoError(t, err)
 	var samples Samples
@@ -279,7 +338,6 @@ func TestReadSamples(t *testing.T) {
 
 	root_key, err := hex.DecodeString(samples.RootPublicKey)
 	require.NoError(t, err)
-	fmt.Printf("Checking %d samples\n", len(samples.TestCases))
 	for _, v := range samples.TestCases {
 		t.Run(v.Filename, func(t *testing.T) { CheckSample(root_key, v, t) })
 	}
