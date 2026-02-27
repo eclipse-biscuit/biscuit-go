@@ -13,7 +13,7 @@ Represents a Datalog type, can be one of: parameter, variable, integer, string, 
 - date is RFC3339 encoded, e.g. `2006-01-02T15:04:05Z`
 - bytes is an hexadecimal encoded string, prefixed with a `hex:` sequence
 - boolean is either `true` or `false`
-- set is a sequence of any of the above types, except variable, between brackets, e.g. `["file1", "file2"]` (sets cannot be nested)
+- set is a sequence of any of the above types, except variable, between brackets, e.g. `{"file1", "file2"}` (sets cannot be nested)
 
 ## Predicate
 
@@ -62,11 +62,11 @@ Constraints allows performing checks on a variable, below is the list of availab
 
 ### Set
 
-- Equal: `$set == ["a", "b"]`
+- Equal: `$set == {"a", "b"}`
 - Contains (element membership): `$set.contains("a")`
-- Contains (set inclusion): `$set.contains([a])`
-- Union: `$set.union(["a"])`
-- Intersection: `$set.intersection(["a"])`
+- Contains (set inclusion): `$set.contains({a})`
+- Union: `$set.union({"a"})`
+- Intersection: `$set.intersection({"a"})`
 - Length: `$set.length()`
 
 ### Operators precedence
