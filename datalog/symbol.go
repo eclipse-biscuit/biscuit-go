@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/eclipse-biscuit/biscuit-go/v2/internal/set"
+	"github.com/eclipse-biscuit/biscuit-go/v2/pb"
 )
 
 var DEFAULT_SYMBOLS = [...]string{
@@ -132,12 +135,12 @@ func (t *SymbolTable) SplitOff(at int) *SymbolTable {
 		panic("split index out of bound")
 	}
 
-	new := make(SymbolTable, len(*t)-at)
-	copy(new, (*t)[at:])
+	newTable := make(SymbolTable, len(*t)-at)
+	copy(newTable, (*t)[at:])
 
 	*t = (*t)[:at]
 
-	return &new
+	return &newTable
 }
 
 func (t *SymbolTable) Len() int {
@@ -169,24 +172,62 @@ func (t *SymbolTable) Extend(other *SymbolTable) {
 	}
 }
 
+// FormatTerm recursively formats a term, resolving String symbols and handling Sets
+func (t *SymbolTable) FormatTerm(term Term) string {
+	switch v := term.(type) {
+	case String:
+		return fmt.Sprintf("\"%s\"", t.Str(v))
+	case Variable:
+		return fmt.Sprintf("$%s", t.Var(v))
+	case Set:
+		elements := make([]string, 0, v.Size())
+		for _, elem := range set.Sorted(v.Iter()) {
+			elements = append(elements, t.FormatTerm(elem)) // Recursive call
+		}
+		// Empty sets use {,} format per Biscuit spec
+		if len(elements) == 0 {
+			return "{,}"
+		}
+		return "{" + strings.Join(elements, ", ") + "}"
+	default:
+		return fmt.Sprintf("%v", term)
+	}
+}
+
 type SymbolDebugger struct {
 	*SymbolTable
+	*PublicKeyTable
 }
 
 func (d SymbolDebugger) Predicate(p Predicate) string {
 	strs := make([]string, len(p.Terms))
 	for i, id := range p.Terms {
-		var s string
-		if sym, ok := id.(String); ok {
-			s = "\"" + d.Str(sym) + "\""
-		} else if variable, ok := id.(Variable); ok {
-			s = "$" + d.Var(variable)
-		} else {
-			s = fmt.Sprintf("%v", id)
-		}
-		strs[i] = s
+		strs[i] = d.Term(id)
 	}
 	return fmt.Sprintf("%s(%s)", d.Str(p.Name), strings.Join(strs, ", "))
+}
+
+// Term formats a term using the symbol table to resolve String symbols.
+func (d SymbolDebugger) Term(t Term) string {
+	switch v := t.(type) {
+	case String:
+		return fmt.Sprintf("\"%s\"", d.Str(v))
+	case Variable:
+		return "$" + d.Var(v)
+	case Set:
+		// Format set elements using the debugger and use curly braces
+		elements := make([]string, 0, v.Size())
+		for _, elem := range set.Sorted(v.Iter()) {
+			elements = append(elements, d.Term(elem))
+		}
+		// Empty sets use {,} format per Biscuit spec
+		if len(elements) == 0 {
+			return "{,}"
+		}
+		return "{" + strings.Join(elements, ", ") + "}"
+	default:
+		return fmt.Sprintf("%v", t)
+	}
 }
 
 func (d SymbolDebugger) Rule(r Rule) string {
@@ -223,7 +264,48 @@ func (d SymbolDebugger) CheckQuery(r Rule) string {
 		expressionsStart = ", "
 	}
 
-	return fmt.Sprintf("%s%s%s", strings.Join(preds, ", "), expressionsStart, strings.Join(expressions, ", "))
+	query := fmt.Sprintf("%s%s%s", strings.Join(preds, ", "), expressionsStart, strings.Join(expressions, ", "))
+
+	// Add scope annotations if present
+	if len(r.Scopes) > 0 {
+		scopeStrs := make([]string, 0, len(r.Scopes))
+		for _, scope := range r.Scopes {
+			scopeStrs = append(scopeStrs, d.Scope(scope))
+		}
+		query += " " + strings.Join(scopeStrs, ", ")
+	}
+
+	return query
+}
+
+// Scope formats a scope annotation
+func (d SymbolDebugger) Scope(s Scope) string {
+	switch s.Type {
+	case AuthorityScopeType:
+		return "trusting authority"
+	case PreviousScopeType:
+		return "trusting previous"
+	case PublicKeyScopeType:
+		if d.PublicKeyTable != nil && int(s.PublicKeyTableIndex) < len(*d.PublicKeyTable) {
+			pk := (*d.PublicKeyTable)[s.PublicKeyTableIndex]
+			return fmt.Sprintf("trusting %s", d.PublicKey(pk))
+		}
+		return fmt.Sprintf("trusting <key#%d>", s.PublicKeyTableIndex)
+	default:
+		return fmt.Sprintf("trusting <unknown:%d>", s.Type)
+	}
+}
+
+// PublicKey formats a public key
+func (d SymbolDebugger) PublicKey(pk PublicKey) string {
+	alg := "unknown"
+	switch pk.Algorithm {
+	case pb.PublicKey_Ed25519:
+		alg = "ed25519"
+	case pb.PublicKey_SECP256R1:
+		alg = "secp256r1"
+	}
+	return fmt.Sprintf("%s/%x", alg, pk.Key)
 }
 
 func (d SymbolDebugger) Expression(e Expression) string {
@@ -235,17 +317,28 @@ func (d SymbolDebugger) Check(c Check) string {
 	for i, q := range c.Queries {
 		queries[i] = d.CheckQuery(q)
 	}
-	return fmt.Sprintf("check if %s", strings.Join(queries, " or "))
+	var checkSyntax string
+	switch c.Kind {
+	case CheckAll:
+		checkSyntax = "check all"
+	case CheckReject:
+		checkSyntax = "reject if"
+	case CheckOne:
+		fallthrough
+	default:
+		checkSyntax = "check if"
+	}
+	return fmt.Sprintf("%s %s", checkSyntax, strings.Join(queries, " or "))
 }
 
 func (d SymbolDebugger) World(w *World) string {
-	facts := make([]string, len(*w.facts))
-	for i, f := range *w.facts {
-		facts[i] = d.Predicate(f.Predicate)
+	facts := make([]string, 0, w.Facts.Count())
+	for f := range w.Facts.AllFacts() {
+		facts = append(facts, d.Predicate(f.Predicate))
 	}
-	rules := make([]string, len(w.rules))
-	for i, r := range w.rules {
-		rules[i] = d.Rule(r)
+	rules := make([]string, 0, len(w.Rules))
+	for r := range w.Rules.AllRules() {
+		rules = append(rules, d.Rule(r))
 	}
 
 	sort.Strings(facts)
@@ -253,10 +346,18 @@ func (d SymbolDebugger) World(w *World) string {
 	return fmt.Sprintf("World {{\n\tfacts: %v\n\trules: %v\n}}", facts, rules)
 }
 
-func (d SymbolDebugger) FactSet(s *FactSet) string {
-	strs := make([]string, len(*s))
-	for i, f := range *s {
-		strs[i] = d.Predicate(f.Predicate)
+func (d SymbolDebugger) FactSet(s FactSet) string {
+	strs := make([]string, 0, s.Count())
+	for fact := range s.AllFacts() {
+		strs = append(strs, d.Predicate(fact.Predicate))
+	}
+	return fmt.Sprintf("%v", strs)
+}
+
+func (d SymbolDebugger) Facts(s []Fact) string {
+	strs := make([]string, 0, len(s))
+	for _, fact := range s {
+		strs = append(strs, d.Predicate(fact.Predicate))
 	}
 	return fmt.Sprintf("%v", strs)
 }
