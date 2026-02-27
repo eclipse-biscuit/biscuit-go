@@ -1,0 +1,16 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/eclipse-biscuit/biscuit-go/v2/pb
+
+# All of these plugins are executed locally, so `protoc-gen-$name` executable
+# has to exist in your `$PATH` for these to work.
+#
+# As long as you're using our generation scripts/make targets, these
+# dependencies should be installed for you.
+plugins:
+  - local: protoc-gen-go
+    out: pb
+    opt: paths=source_relative
