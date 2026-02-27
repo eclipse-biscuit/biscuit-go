@@ -131,7 +131,7 @@ func TestExpressionConvertV2(t *testing.T) {
 		{
 			Desc: "int comparison in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.Integer(1), datalog.Integer(2), datalog.Integer(3)}},
+				datalog.Value{ID: datalog.NewSet(datalog.Integer(1), datalog.Integer(2), datalog.Integer(3))},
 				datalog.Value{ID: datalog.Variable(8)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 			},
@@ -150,7 +150,7 @@ func TestExpressionConvertV2(t *testing.T) {
 		{
 			Desc: "int comparison not in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.Integer(1), datalog.Integer(2), datalog.Integer(3)}},
+				datalog.Value{ID: datalog.NewSet(datalog.Integer(1), datalog.Integer(2), datalog.Integer(3))},
 				datalog.Value{ID: datalog.Variable(9)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 				datalog.UnaryOp{UnaryOpFunc: datalog.Negate{}},
@@ -217,7 +217,7 @@ func TestExpressionConvertV2(t *testing.T) {
 		{
 			Desc: "string comparison in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")}},
+				datalog.Value{ID: datalog.NewSet(syms.Insert("a"), syms.Insert("b"), syms.Insert("c"))},
 				datalog.Value{ID: datalog.Variable(13)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 			},
@@ -236,7 +236,7 @@ func TestExpressionConvertV2(t *testing.T) {
 		{
 			Desc: "string comparison not in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("c")}},
+				datalog.Value{ID: datalog.NewSet(syms.Insert("a"), syms.Insert("b"), syms.Insert("c"))},
 				datalog.Value{ID: datalog.Variable(14)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 				datalog.UnaryOp{UnaryOpFunc: datalog.Negate{}},
@@ -287,7 +287,7 @@ func TestExpressionConvertV2(t *testing.T) {
 		{
 			Desc: "bytes in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.Bytes("a"), datalog.Bytes("b"), datalog.Bytes("c")}},
+				datalog.Value{ID: datalog.NewSet(datalog.Bytes("a"), datalog.Bytes("b"), datalog.Bytes("c"))},
 				datalog.Value{ID: datalog.Variable(17)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 			},
@@ -306,7 +306,7 @@ func TestExpressionConvertV2(t *testing.T) {
 		{
 			Desc: "bytes not in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.Bytes("a"), datalog.Bytes("b"), datalog.Bytes("c")}},
+				datalog.Value{ID: datalog.NewSet(datalog.Bytes("a"), datalog.Bytes("b"), datalog.Bytes("c"))},
 				datalog.Value{ID: datalog.Variable(18)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 				datalog.UnaryOp{UnaryOpFunc: datalog.Negate{}},
@@ -327,7 +327,7 @@ func TestExpressionConvertV2(t *testing.T) {
 		{
 			Desc: "symbols in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.String(1), datalog.String(2), datalog.String(3)}},
+				datalog.Value{ID: datalog.NewSet(datalog.String(1), datalog.String(2), datalog.String(3))},
 				datalog.Value{ID: datalog.Variable(19)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 			},
@@ -346,7 +346,7 @@ func TestExpressionConvertV2(t *testing.T) {
 		{
 			Desc: "symbols not in",
 			Input: datalog.Expression{
-				datalog.Value{ID: datalog.Set{datalog.String(1), datalog.String(2), datalog.String(3)}},
+				datalog.Value{ID: datalog.NewSet(datalog.String(1), datalog.String(2), datalog.String(3))},
 				datalog.Value{ID: datalog.Variable(20)},
 				datalog.BinaryOp{BinaryOpFunc: datalog.Contains{}},
 				datalog.UnaryOp{UnaryOpFunc: datalog.Negate{}},
@@ -551,22 +551,24 @@ func TestFactConvertV2(t *testing.T) {
 	now := time.Now()
 	syms := &datalog.SymbolTable{}
 
-	in := &datalog.Fact{Predicate: datalog.Predicate{
-		Name: datalog.String(42),
-		Terms: []datalog.Term{
-			datalog.String(1),
-			datalog.Integer(2),
-			datalog.Variable(3),
-			datalog.Bytes([]byte("bytes")),
-			syms.Insert("abcd"),
-			datalog.Date(now.Unix()),
-			datalog.Bool(true),
-			datalog.Set{
-				syms.Insert("abc"),
-				syms.Insert("def"),
+	in := &datalog.Fact{
+		Predicate: datalog.Predicate{
+			Name: datalog.String(42),
+			Terms: []datalog.Term{
+				datalog.String(1),
+				datalog.Integer(2),
+				datalog.Variable(3),
+				datalog.Bytes([]byte("bytes")),
+				syms.Insert("abcd"),
+				datalog.Date(now.Unix()),
+				datalog.Bool(true),
+				datalog.NewSet(
+					syms.Insert("abc"),
+					syms.Insert("def"),
+				),
 			},
 		},
-	}}
+	}
 
 	name1 := uint64(42)
 	expectedPbFact := &pb.FactV2{Predicate: &pb.PredicateV2{
@@ -603,31 +605,27 @@ func TestConvertInvalTermsets(t *testing.T) {
 		in   datalog.Set
 	}{
 		{
-			desc: "empty set",
-			in:   datalog.Set{},
-		},
-		{
 			desc: "mixed element types",
-			in: datalog.Set{
+			in: datalog.NewSet(
 				syms.Insert("abc"),
 				datalog.Integer(1),
-			},
+			),
 		},
 		{
 			desc: "set with variables",
-			in: datalog.Set{
+			in: datalog.NewSet(
 				datalog.Variable(0),
 				datalog.Variable(1),
-			},
+			),
 		},
 		{
 			desc: "set with sub sets",
-			in: datalog.Set{
-				datalog.Set{
+			in: datalog.NewSet(
+				datalog.NewSet(
 					syms.Insert("abc"),
 					syms.Insert("def"),
-				},
-			},
+				),
+			),
 		},
 	}
 
@@ -635,12 +633,6 @@ func TestConvertInvalTermsets(t *testing.T) {
 		desc string
 		in   *pb.TermV2
 	}{
-		{
-			desc: "empty set",
-			in: &pb.TermV2{Content: &pb.TermV2_Set{Set: &pb.TermSet{
-				Set: []*pb.TermV2{},
-			}}},
-		},
 		{
 			desc: "mixed element types",
 			in: &pb.TermV2{Content: &pb.TermV2_Set{Set: &pb.TermSet{
@@ -725,7 +717,10 @@ func TestBlockConvertV2(t *testing.T) {
 
 	in := &Block{
 		symbols: &datalog.SymbolTable{"a", "b", "c", "d"},
-		facts:   &datalog.FactSet{datalog.Fact{Predicate: predicate}},
+		facts: []datalog.Fact{
+			{
+				Predicate: predicate,
+			}},
 		rules:   []datalog.Rule{*rule},
 		checks:  []datalog.Check{{Queries: []datalog.Rule{*rule}}},
 		context: "context",
@@ -749,12 +744,12 @@ func TestBlockConvertV2(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedPbBlock, pbBlock)
 
-	out, err := protoBlockToTokenBlock(pbBlock)
+	out, err := protoBlockToTokenBlock(pbBlock, nil)
 	require.NoError(t, err)
 	require.Equal(t, in, out)
 
 	version = uint32(MaxSchemaVersion + 1)
 	pbBlock.Version = proto.Uint32(version)
-	_, err = protoBlockToTokenBlock(pbBlock)
+	_, err = protoBlockToTokenBlock(pbBlock, nil)
 	require.Error(t, err)
 }
