@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -196,17 +197,19 @@ func extractWorld(t *testing.T, authorizer biscuit.Authorizer) World {
 	return world
 }
 
-// tests above this are unsupported features
+// All tests below this number are enabled
 const skipTestsAtNum int = 26
-const allowThisTest int = 29
 
-func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
+// These tests are above `skipTestsAtNum` and are also enabled
+var allowTheseTests = []int{29, 36}
+
+func CheckSample(rootKey ed25519.PublicKey, c TestCase, t *testing.T) {
 	t.Helper()
 
 	// Skip tests for block versions not yet supported
 	testNum := 0
 	if _, err := fmt.Sscanf(c.Filename, "test%d_", &testNum); err == nil {
-		if testNum >= skipTestsAtNum && testNum != allowThisTest {
+		if testNum >= skipTestsAtNum && !slices.Contains(allowTheseTests, testNum) {
 			t.SkipNow()
 		}
 	}
@@ -222,7 +225,7 @@ func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
 		}
 
 		for _, v := range c.Validations {
-			CompareResult(root_key, c.Filename, *token, v, t)
+			CompareResult(rootKey, c.Filename, *token, v, t)
 		}
 
 	} else {
