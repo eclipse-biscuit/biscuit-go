@@ -1,127 +1,106 @@
-// Copyright (c) 2019 Titanous, daeMOn63 and Contributors to the Eclipse Foundation.
-// SPDX-License-Identifier: Apache-2.0
-
 package biscuit_test
 
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"fmt"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/eclipse-biscuit/biscuit-go/v2"
 	"github.com/eclipse-biscuit/biscuit-go/v2/parser"
 )
 
-func ExampleBiscuit() {
+func TestBiscuit_RoundTrip(t *testing.T) {
+	// Generate a root key.
 	rng := rand.Reader
 	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
 
+	// Build an authority block with some basic rights as facts.
 	authority, err := parser.FromStringBlockWithParams(`
 		right("/a/file1.txt", {read});
 		right("/a/file1.txt", {write});
 		right("/a/file2.txt", {read});
 		right("/a/file3.txt", {write});
 	`, map[string]biscuit.Term{"read": biscuit.String("read"), "write": biscuit.String("write")})
-	if err != nil {
-		panic(fmt.Errorf("failed to parse authority block: %v", err))
-	}
+	require.NoError(t, err, "failed to parse authority block")
 
 	builder := biscuit.NewBuilder(privateRoot)
-	builder.AddBlock(authority)
+	err = builder.AddBlock(authority)
+	require.NoError(t, err, "failed to add block")
 
 	b, err := builder.Build()
-	if err != nil {
-		panic(fmt.Errorf("failed to build biscuit: %v", err))
-	}
+	require.NoError(t, err, "failed to build block")
 
+	// Serialize this biscuit with just an authority block.
 	token, err := b.Serialize()
-	if err != nil {
-		panic(fmt.Errorf("failed to serialize biscuit: %v", err))
-	}
+	require.NoError(t, err, "failed to serialize biscuit")
 
-	fmt.Printf("Token1 length: %d\n", len(token))
+	t.Logf("Token1 length: %d\n", len(token))
 
+	// Deserialize this biscuit with just an authority block.
 	deser, err := biscuit.Unmarshal(token)
-	if err != nil {
-		panic(fmt.Errorf("failed to deserialize biscuit: %v", err))
-	}
+	require.NoError(t, err, "failed to deserialize biscuit")
 
-	blockBuilder := deser.CreateBlock()
+	// Add some attenuation by appending a block with a check if statement.
+	blockBuilder := deser.CreateBlock(0)
 
 	block, err := parser.FromStringBlockWithParams(`
-			check if resource($file), operation($permission), [{read}].contains($permission);`,
+			check if resource($file), operation($permission), {{read}}.contains($permission);`,
 		map[string]biscuit.Term{"read": biscuit.String("read")})
+	require.NoError(t, err, "failed to parse block")
 
-	if err != nil {
-		panic(fmt.Errorf("failed to parse block: %v", err))
-	}
-	blockBuilder.AddBlock(block)
+	err = blockBuilder.AddBlock(block)
+	require.NoError(t, err, "failed to add block")
 
-	b2, err := deser.Append(rng, blockBuilder.Build())
-	if err != nil {
-		panic(fmt.Errorf("failed to append: %v", err))
-	}
+	b2, err := deser.AppendBlock(rng, blockBuilder)
+	require.NoError(t, err, "failed to append block")
 
+	// Serialize this biscuit with an authority block and one appended block.
 	token2, err := b2.Serialize()
-	if err != nil {
-		panic(fmt.Errorf("failed to serialize biscuit: %v", err))
-	}
+	require.NoError(t, err, "failed to serialize biscuit")
 
-	fmt.Printf("Token2 length: %d\n", len(token2))
+	t.Logf("Token2 length: %d\n", len(token2))
 
-	// Verify
+	// Verify and authorize the attenuated biscuit.
+	// First check that biscuit b2 is authorized to read the file `/a/file1.txt`.
 	b2, err = biscuit.Unmarshal(token2)
-	if err != nil {
-		panic(fmt.Errorf("failed to deserialize token: %v", err))
-	}
+	require.NoError(t, err, "failed to deserialize biscuit")
 
-	v1, err := b2.Authorizer(publicRoot)
-	if err != nil {
-		panic(fmt.Errorf("failed to create verifier: %v", err))
-	}
+	vb1, err := b2.Authorizer(publicRoot)
+	require.NoError(t, err)
 
 	authorizer, err := parser.FromStringAuthorizerWithParams(`
 		resource({res});
 		operation({op});
 		allow if right({res}, {op});
 		`, map[string]biscuit.Term{"res": biscuit.String("/a/file1.txt"), "op": biscuit.String("read")})
+	require.NoError(t, err, "failed to parse authorizer")
+	vb1.AddAuthorizer(authorizer)
 
-	if err != nil {
-		panic(fmt.Errorf("failed to parse authorizer: %v", err))
-	}
-	v1.AddAuthorizer(authorizer)
+	v1, err := vb1.Build()
+	require.NoError(t, err)
 
-	if err := v1.Authorize(); err != nil {
-		// fmt.Println(v1.PrintWorld())
+	err = v1.Authorize()
+	assert.NoError(t, err)
 
-		fmt.Println("forbidden to read /a/file1.txt")
-	} else {
-		//fmt.Println(v1.PrintWorld())
-
-		fmt.Println("allowed to read /a/file1.txt")
-	}
-
-	v1, _ = b2.Authorizer(publicRoot)
+	// Second, check that biscuit b2 is *not* authorized to write the file `/a/file2.txt` (because of the attenuation).
+	vb1, err = b2.Authorizer(publicRoot)
+	require.NoError(t, err)
 
 	authorizer, err = parser.FromStringAuthorizerWithParams(`
 		resource({res});
 		operation({op});
 		allow if right({res}, {op});
 		`, map[string]biscuit.Term{"res": biscuit.String("/a/file1.txt"), "op": biscuit.String("write")})
+	require.NoError(t, err, "failed to parse authorizer")
 
-	if err != nil {
-		panic(fmt.Errorf("failed to parse authorizer: %v", err))
-	}
-	v1.AddAuthorizer(authorizer)
+	vb1.AddAuthorizer(authorizer)
 
-	if err := v1.Authorize(); err != nil {
-		fmt.Println("forbidden to write /a/file1.txt")
-	} else {
-		fmt.Println("allowed to write /a/file1.txt")
-	}
+	v1, err = vb1.Build()
+	require.NoError(t, err)
 
-	// Output: Token1 length: 251
-	// Token2 length: 433
-	// allowed to read /a/file1.txt
-	// forbidden to write /a/file1.txt
+	err = v1.Authorize()
+	require.Error(t, err)
 }

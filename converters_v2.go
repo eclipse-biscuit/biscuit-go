@@ -1,6 +1,3 @@
-// Copyright (c) 2019 Titanous, daeMOn63 and Contributors to the Eclipse Foundation.
-// SPDX-License-Identifier: Apache-2.0
-
 package biscuit
 
 import (
@@ -9,6 +6,7 @@ import (
 	"reflect"
 
 	"github.com/eclipse-biscuit/biscuit-go/v2/datalog"
+	"github.com/eclipse-biscuit/biscuit-go/v2/internal/set"
 	"github.com/eclipse-biscuit/biscuit-go/v2/pb"
 )
 
@@ -28,6 +26,7 @@ func protoFactToTokenFactV2(input *pb.FactV2) (*datalog.Fact, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &datalog.Fact{
 		Predicate: *pred,
 	}, nil
@@ -97,41 +96,50 @@ func tokenIDToProtoIDV2(input datalog.Term) (*pb.TermV2, error) {
 		}
 	case datalog.TermTypeSet:
 		datalogSet := input.(datalog.Set)
-		if len(datalogSet) == 0 {
-			return nil, errors.New("biscuit: failed to convert token ID to proto ID: set cannot be empty")
-		}
-
-		expectedEltType := datalogSet[0].Type()
-		switch expectedEltType {
-		case datalog.TermTypeVariable:
-			return nil, errors.New("biscuit: failed to convert token ID to proto ID: set cannot contains variable")
-		case datalog.TermTypeSet:
-			return nil, errors.New("biscuit: failed to convert token ID to proto ID: set cannot contains other sets")
-		}
-
-		protoSet := make([]*pb.TermV2, 0, len(datalogSet))
-		for _, datalogElt := range datalogSet {
-			if datalogElt.Type() != expectedEltType {
-				return nil, fmt.Errorf(
-					"biscuit: failed to convert token ID to proto ID: set elements must have the same type (got %x, want %x)",
-					datalogElt.Type(),
-					expectedEltType,
-				)
-			}
-
-			protoElt, err := tokenIDToProtoIDV2(datalogElt)
-			if err != nil {
-				return nil, err
-			}
-
-			protoSet = append(protoSet, protoElt)
-		}
-		pbId = &pb.TermV2{
-			Content: &pb.TermV2_Set{
-				Set: &pb.TermSet{
-					Set: protoSet,
+		if datalogSet.Size() == 0 {
+			pbId = &pb.TermV2{
+				Content: &pb.TermV2_Set{
+					Set: &pb.TermSet{
+						Set: []*pb.TermV2{},
+					},
 				},
-			},
+			}
+		} else {
+			terms := set.Sorted(datalogSet.Iter())
+			first := terms[0] // previously checked that len > 0
+			expectedEltType := first.Type()
+			switch expectedEltType {
+			case datalog.TermTypeVariable:
+				return nil, errors.New("biscuit: failed to convert token ID to proto ID: set cannot contains variables")
+			case datalog.TermTypeSet:
+				return nil, errors.New("biscuit: failed to convert token ID to proto ID: set cannot contains other sets")
+			default:
+			}
+
+			protoSet := make([]*pb.TermV2, 0, len(terms))
+			for _, datalogElt := range terms {
+				if datalogElt.Type() != expectedEltType {
+					return nil, fmt.Errorf(
+						"biscuit: failed to convert token ID to proto ID: set elements must have the same type (got %x, want %x)",
+						datalogElt.Type(),
+						expectedEltType,
+					)
+				}
+
+				protoElt, err := tokenIDToProtoIDV2(datalogElt)
+				if err != nil {
+					return nil, err
+				}
+
+				protoSet = append(protoSet, protoElt)
+			}
+			pbId = &pb.TermV2{
+				Content: &pb.TermV2_Set{
+					Set: &pb.TermSet{
+						Set: protoSet,
+					},
+				},
+			}
 		}
 	default:
 		return nil, fmt.Errorf("biscuit: failed to convert token ID to proto ID: unsupported id type: %v", input.Type())
@@ -156,34 +164,35 @@ func protoIDToTokenIDV2(input *pb.TermV2) (*datalog.Term, error) {
 		id = datalog.Bool(input.GetBool())
 	case *pb.TermV2_Set:
 		elts := input.GetSet().Set
-		if len(elts) == 0 {
-			return nil, errors.New("biscuit: failed to convert proto ID to token ID: set cannot be empty")
-		}
 
-		expectedEltType := reflect.TypeOf(elts[0].GetContent())
-		switch expectedEltType {
-		case reflect.TypeOf(&pb.TermV2_Variable{}):
-			return nil, errors.New("biscuit: failed to convert proto ID to token ID: set cannot contains variable")
-		case reflect.TypeOf(&pb.TermV2_Set{}):
-			return nil, errors.New("biscuit: failed to convert proto ID to token ID: set cannot contains other sets")
-		}
+		datalogSet := datalog.NewSet()
 
-		datalogSet := make(datalog.Set, 0, len(elts))
-		for _, protoElt := range elts {
-			if eltType := reflect.TypeOf(protoElt.GetContent()); eltType != expectedEltType {
-				return nil, fmt.Errorf(
-					"biscuit: failed to convert proto ID to token ID: set elements must have the same type (got %x, want %x)",
-					eltType,
-					expectedEltType,
-				)
+		if len(elts) > 0 {
+			expectedEltType := reflect.TypeOf(elts[0].GetContent())
+			switch expectedEltType {
+			case reflect.TypeOf(&pb.TermV2_Variable{}):
+				return nil, errors.New("biscuit: failed to convert proto ID to token ID: set cannot contains variable")
+			case reflect.TypeOf(&pb.TermV2_Set{}):
+				return nil, errors.New("biscuit: failed to convert proto ID to token ID: set cannot contains other sets")
 			}
 
-			datalogElt, err := protoIDToTokenIDV2(protoElt)
-			if err != nil {
-				return nil, err
+			for _, protoElt := range elts {
+				if eltType := reflect.TypeOf(protoElt.GetContent()); eltType != expectedEltType {
+					return nil, fmt.Errorf(
+						"biscuit: failed to convert proto ID to token ID: set elements must have the same type (got %x, want %x)",
+						eltType,
+						expectedEltType,
+					)
+				}
+
+				datalogElt, err := protoIDToTokenIDV2(protoElt)
+				if err != nil {
+					return nil, err
+				}
+				datalogSet = datalogSet.Union(datalog.NewSet(*datalogElt))
 			}
-			datalogSet = append(datalogSet, *datalogElt)
 		}
+
 		id = datalogSet
 	default:
 		return nil, fmt.Errorf("biscuit: failed to convert proto ID to token ID: unsupported id type: %T", input.Content)
@@ -216,17 +225,30 @@ func tokenRuleToProtoRuleV2(input datalog.Rule) (*pb.RuleV2, error) {
 		return nil, err
 	}
 
+	var pbScopes []*pb.Scope
+	if input.Scopes != nil && len(input.Scopes) > 0 {
+		pbScopes = make([]*pb.Scope, len(input.Scopes))
+		for i, s := range input.Scopes {
+			scope, err := tokenScopeToProtoScope(&s)
+			if err != nil {
+				return nil, err
+			}
+			pbScopes[i] = scope
+		}
+	}
+
 	return &pb.RuleV2{
 		Head:        pbHead,
 		Body:        pbBody,
 		Expressions: pbExpressions,
+		Scope:       pbScopes,
 	}, nil
 }
 
 func protoRuleToTokenRuleV2(input *pb.RuleV2) (*datalog.Rule, error) {
 	body := make([]datalog.Predicate, len(input.Body))
-	for i, pb := range input.Body {
-		b, err := protoPredicateToTokenPredicateV2(pb)
+	for i, pbBody := range input.Body {
+		b, err := protoPredicateToTokenPredicateV2(pbBody)
 		if err != nil {
 			return nil, err
 		}
@@ -242,6 +264,18 @@ func protoRuleToTokenRuleV2(input *pb.RuleV2) (*datalog.Rule, error) {
 		expressions[i] = e
 	}
 
+	var scopes []datalog.Scope
+	if input.Scope != nil && len(input.Scope) > 0 {
+		scopes = make([]datalog.Scope, len(input.Scope))
+		for i, pbScope := range input.Scope {
+			s, err := protoScopeToTokenScope(pbScope)
+			if err != nil {
+				return nil, err
+			}
+			scopes[i] = *s
+		}
+	}
+
 	head, err := protoPredicateToTokenPredicateV2(input.Head)
 	if err != nil {
 		return nil, err
@@ -250,6 +284,7 @@ func protoRuleToTokenRuleV2(input *pb.RuleV2) (*datalog.Rule, error) {
 		Head:        *head,
 		Body:        body,
 		Expressions: expressions,
+		Scopes:      scopes,
 	}, nil
 }
 
@@ -440,8 +475,25 @@ func tokenCheckToProtoCheckV2(input datalog.Check) (*pb.CheckV2, error) {
 		pbQueries[i] = q
 	}
 
+	var kind *pb.CheckV2_Kind
+	switch input.Kind {
+
+	case datalog.CheckAll:
+		kindVal := pb.CheckV2_All
+		kind = &kindVal
+	case datalog.CheckReject:
+		kindVal := pb.CheckV2_Reject
+		kind = &kindVal
+	case datalog.CheckOne:
+		fallthrough
+	default:
+		// nil is equivalent to and preferred over pb.CheckV2_One (to keep payload size small)
+		kind = nil
+	}
+
 	return &pb.CheckV2{
 		Queries: pbQueries,
+		Kind:    kind,
 	}, nil
 }
 
@@ -455,7 +507,76 @@ func protoCheckToTokenCheckV2(input *pb.CheckV2) (*datalog.Check, error) {
 		queries[i] = *q
 	}
 
+	var kind datalog.CheckKind
+	if input.Kind == nil {
+		kind = datalog.CheckOne
+	} else {
+		switch *input.Kind {
+		case pb.CheckV2_One:
+			kind = datalog.CheckOne
+		case pb.CheckV2_All:
+			kind = datalog.CheckAll
+		case pb.CheckV2_Reject:
+			kind = datalog.CheckReject
+		default:
+			return nil, fmt.Errorf("biscuit: unsupported Check kind: %v", *input.Kind)
+		}
+	}
+
 	return &datalog.Check{
 		Queries: queries,
+		Kind:    kind,
 	}, nil
+}
+
+func protoScopeToTokenScope(input *pb.Scope) (*datalog.Scope, error) {
+	var scopeType datalog.ScopeType
+	var pubKeyTableIndex uint64
+
+	switch input.Content.(type) {
+	case *pb.Scope_ScopeType_:
+		switch input.GetScopeType() {
+		case pb.Scope_Authority:
+			scopeType = datalog.AuthorityScopeType
+		case pb.Scope_Previous:
+			scopeType = datalog.PreviousScopeType
+		}
+	case *pb.Scope_PublicKey:
+		pubKeyTableIndex = uint64(input.GetPublicKey())
+		scopeType = datalog.PublicKeyScopeType
+	default:
+		return nil, fmt.Errorf("biscuit: unknown scope content type: %T", input.Content)
+	}
+
+	return &datalog.Scope{
+		Type:                scopeType,
+		PublicKeyTableIndex: pubKeyTableIndex,
+	}, nil
+}
+
+func tokenScopeToProtoScope(input *datalog.Scope) (*pb.Scope, error) {
+	switch input.Type {
+	case datalog.AuthorityScopeType:
+		scopeType := pb.Scope_Authority
+		return &pb.Scope{
+			Content: &pb.Scope_ScopeType_{
+				ScopeType: scopeType,
+			},
+		}, nil
+	case datalog.PreviousScopeType:
+		scopeType := pb.Scope_Previous
+		return &pb.Scope{
+			Content: &pb.Scope_ScopeType_{
+				ScopeType: scopeType,
+			},
+		}, nil
+	case datalog.PublicKeyScopeType:
+		return &pb.Scope{
+			Content: &pb.Scope_PublicKey{
+				PublicKey: int64(input.PublicKeyTableIndex),
+			},
+		}, nil
+	default:
+		return nil, fmt.Errorf("biscuit: unsupported scope type: %v", input.Type)
+	}
 }

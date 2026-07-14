@@ -1,18 +1,14 @@
-// Copyright (c) 2019 Titanous, daeMOn63 and Contributors to the Eclipse Foundation.
-// SPDX-License-Identifier: Apache-2.0
-
 package biscuit
 
 import (
+	"crypto"
 	"crypto/ed25519"
 	"errors"
-	"io"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/eclipse-biscuit/biscuit-go/v2/datalog"
 	"github.com/eclipse-biscuit/biscuit-go/v2/pb"
-
-	//"github.com/eclipse-biscuit/biscuit-go/sig"
-	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -26,57 +22,38 @@ type Builder interface {
 	AddAuthorityRule(rule Rule) error
 	AddAuthorityCheck(check Check) error
 	SetContext(string)
+	BuildWithSymbols(datalog.SymbolTable, datalog.PublicKeyTable) (*Biscuit, error)
 	Build() (*Biscuit, error)
 }
 
-type builderOptions struct {
-	rng       io.Reader
-	rootKey   ed25519.PrivateKey
-	rootKeyID *uint32
-
-	symbolsStart int
-	symbols      *datalog.SymbolTable
-	facts        *datalog.FactSet
-	rules        []datalog.Rule
-	checks       []datalog.Check
-	context      string
+type biscuitBuilder struct {
+	rootKey        crypto.Signer
+	authorityBlock BlockBuilder
+	biscuitOptions []biscuitOption
 }
 
-type builderOption interface {
-	applyToBuilder(b *builderOptions)
-}
-
-type symbolsOption struct {
-	*datalog.SymbolTable
-}
-
-func (o symbolsOption) applyToBuilder(b *builderOptions) {
-	b.symbolsStart = o.Len()
-	b.symbols = o.Clone()
-}
-
-// WithSymbols supplies a symbol table to use when composing biscuits.
-func WithSymbols(symbols *datalog.SymbolTable) builderOption {
-	return symbolsOption{symbols}
-}
-
-func NewBuilder(root ed25519.PrivateKey, opts ...builderOption) Builder {
-	b := &builderOptions{
-		rootKey:      root,
-		symbols:      defaultSymbolTable.Clone(),
-		symbolsStart: defaultSymbolTable.Len(),
-		facts:        new(datalog.FactSet),
-	}
-
-	for _, o := range opts {
-		o.applyToBuilder(b)
+func NewBuilder(root ed25519.PrivateKey, opts ...biscuitOption) Builder {
+	b := &biscuitBuilder{
+		rootKey:        root,
+		authorityBlock: NewBlockBuilder(),
+		biscuitOptions: opts,
 	}
 
 	return b
 }
 
-func (b *builderOptions) AddBlock(block ParsedBlock) error {
-	for _, f := range block.Facts {
+func NewBuilderSigner(root crypto.Signer, opts ...biscuitOption) Builder {
+	b := &biscuitBuilder{
+		rootKey:        root,
+		authorityBlock: NewBlockBuilder(),
+		biscuitOptions: opts,
+	}
+
+	return b
+}
+
+func (b *biscuitBuilder) AddBlock(block ParsedBlock) error {
+	for f := range block.Facts.Iter() {
 		if err := b.AddAuthorityFact(f); err != nil {
 			return err
 		}
@@ -97,50 +74,42 @@ func (b *builderOptions) AddBlock(block ParsedBlock) error {
 	return nil
 }
 
-func (b *builderOptions) AddAuthorityFact(fact Fact) error {
-	dlFact := fact.convert(b.symbols)
-	if !b.facts.Insert(dlFact) {
-		return ErrDuplicateFact
-	}
-
-	return nil
+func (b *biscuitBuilder) AddAuthorityFact(fact Fact) error {
+	return b.authorityBlock.AddFact(fact)
 }
 
-func (b *builderOptions) AddAuthorityRule(rule Rule) error {
-	dlRule := rule.convert(b.symbols)
-	b.rules = append(b.rules, dlRule)
-	return nil
+func (b *biscuitBuilder) AddAuthorityRule(rule Rule) error {
+	return b.authorityBlock.AddRule(rule)
 }
 
-func (b *builderOptions) AddAuthorityCheck(check Check) error {
-	b.checks = append(b.checks, check.convert(b.symbols))
-	return nil
+func (b *biscuitBuilder) AddAuthorityCheck(check Check) error {
+	return b.authorityBlock.AddCheck(check)
 }
 
-func (b *builderOptions) SetContext(context string) {
-	b.context = context
+func (b *biscuitBuilder) SetContext(context string) {
+	b.authorityBlock.SetContext(context)
 }
 
-func (b *builderOptions) Build() (*Biscuit, error) {
-	opts := make([]biscuitOption, 0, 2)
-	if v := b.rng; v != nil {
-		opts = append(opts, WithRNG(b.rng))
-	}
-	if v := b.rootKeyID; v != nil {
-		opts = append(opts, WithRootKeyID(*v))
-	}
+func (b *biscuitBuilder) Build() (*Biscuit, error) {
+	return b.BuildWithSymbols(*defaultSymbolTable.Clone(), *datalog.NewPublicKeyTable())
+}
+
+func (b *biscuitBuilder) BuildWithSymbols(
+	symbols datalog.SymbolTable,
+	publicKeys datalog.PublicKeyTable,
+) (*Biscuit, error) {
+	authorityBlock := b.authorityBlock.Build(symbols, publicKeys, datalog.SignatureRegistry{})
+
+	// TODO: Use biscuit-rust's datalog version heuristic when creating biscuits and appending signedBlocks
+	authorityBlock.version = DatalogVersion3_3
+
 	return newBiscuit(
 		b.rootKey,
-		b.symbols,
-		&Block{
-			symbols: b.symbols.SplitOff(b.symbolsStart),
-			facts:   b.facts,
-			rules:   b.rules,
-			checks:  b.checks,
-			context: b.context,
-			version: MaxSchemaVersion,
-		},
-		opts...)
+		symbols,
+		publicKeys,
+		authorityBlock,
+		b.biscuitOptions...,
+	)
 }
 
 type Unmarshaler struct {
@@ -157,17 +126,16 @@ func (u *Unmarshaler) Unmarshal(serialized []byte) (*Biscuit, error) {
 	}
 
 	symbols := u.Symbols.Clone()
+	publicKeys := datalog.NewPublicKeyTable()
+	signatureRegistry := &datalog.SignatureRegistry{}
 
 	container := new(pb.Biscuit)
 	if err := proto.Unmarshal(serialized, container); err != nil {
 		return nil, err
 	}
 
-	if len(container.Authority.NextKey.Key) != 32 {
-		return nil, ErrInvalidKeySize
-	}
-	if len(container.Authority.Signature) != 64 {
-		return nil, ErrInvalidSignatureSize
+	if err := verifySignedBlockCryptoSizes(container.Authority); err != nil {
+		return nil, err
 	}
 
 	pbAuthority := new(pb.Block)
@@ -175,41 +143,54 @@ func (u *Unmarshaler) Unmarshal(serialized []byte) (*Biscuit, error) {
 		return nil, err
 	}
 
-	authority, err := protoBlockToTokenBlock(pbAuthority)
+	authority, err := protoBlockToTokenBlock(pbAuthority, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	symbols.Extend(authority.symbols)
+	authority.UpdatePublicKeys(0, publicKeys, signatureRegistry)
 
 	blocks := make([]*Block, len(container.Blocks))
 	for i, sb := range container.Blocks {
-		if len(sb.NextKey.Key) != 32 {
-			return nil, ErrInvalidKeySize
+		if err := verifySignedBlockCryptoSizes(sb); err != nil {
+			return nil, err
 		}
-		if len(sb.Signature) != 64 {
-			return nil, ErrInvalidSignatureSize
-		}
+
+		blockID := uint64(i) + 1
 
 		pbBlock := new(pb.Block)
 		if err := proto.Unmarshal(sb.Block, pbBlock); err != nil {
 			return nil, err
 		}
 
-		block, err := protoBlockToTokenBlock(pbBlock)
+		tokenBlock, err := protoBlockToTokenBlock(pbBlock, sb.GetExternalSignature())
 		if err != nil {
 			return nil, err
 		}
-		blocks[i] = block
-		symbols.Extend(blocks[i].symbols)
+
+		blocks[i] = tokenBlock
+
+		if !tokenBlock.IsThirdParty() {
+			symbols.Extend(tokenBlock.symbols)
+		} else {
+			tokenBlock.symbols.Extend(tokenBlock.symbols)
+		}
+
+		symbols.Extend(tokenBlock.symbols)
+		tokenBlock.UpdatePublicKeys(blockID, publicKeys, signatureRegistry)
 	}
 
-	return &Biscuit{
-		authority: authority,
-		symbols:   symbols,
-		blocks:    blocks,
-		container: container,
-	}, nil
+	result := &Biscuit{
+		authority:         authority,
+		symbols:           symbols,
+		publicKeys:        publicKeys,
+		signatureRegistry: signatureRegistry,
+		blocks:            blocks,
+		container:         container,
+	}
+
+	return result, nil
 }
 
 type BlockBuilder interface {
@@ -217,31 +198,53 @@ type BlockBuilder interface {
 	AddFact(fact Fact) error
 	AddRule(rule Rule) error
 	AddCheck(check Check) error
+	AddScope(scope Scope) error
 	SetContext(string)
-	Build() *Block
+	SetBlockID(uint64)
+	Build(datalog.SymbolTable, datalog.PublicKeyTable, datalog.SignatureRegistry) *Block
 }
 
 type blockBuilder struct {
 	symbolsStart int
-	symbols      *datalog.SymbolTable
-	facts        *datalog.FactSet
-	rules        []datalog.Rule
-	checks       []datalog.Check
+	facts        *FactSet
+	rules        []Rule
+	checks       []Check
+	scopes       []Scope
 	context      string
+	blockID      uint64
+	buildOptions []BlockBuilderOption
 }
 
 var _ BlockBuilder = (*blockBuilder)(nil)
 
-func NewBlockBuilder(baseSymbols *datalog.SymbolTable) BlockBuilder {
+// blockBuilderConfig is used by the [BlockBuilder] when building blocks to enable [BlockBuilderOption].
+type blockBuilderConfig struct {
+	symbols           datalog.SymbolTable
+	symbolsStart      int
+	publicKeys        datalog.PublicKeyTable
+	publicKeysStart   int
+	signatureRegistry datalog.SignatureRegistry
+}
+
+// BlockBuilderOption allows custom block builder dependency injection, which should only really be needed for testing.
+type BlockBuilderOption func(*blockBuilderConfig)
+
+func WithSymbolStart(start int) BlockBuilderOption {
+	return func(b *blockBuilderConfig) {
+		b.symbolsStart = start
+	}
+}
+
+func NewBlockBuilder(opts ...BlockBuilderOption) BlockBuilder {
 	return &blockBuilder{
-		symbolsStart: baseSymbols.Len(),
-		symbols:      baseSymbols,
-		facts:        new(datalog.FactSet),
+		blockID:      0,
+		buildOptions: opts,
+		facts:        NewFactSet(),
 	}
 }
 
 func (b *blockBuilder) AddBlock(block ParsedBlock) error {
-	for _, f := range block.Facts {
+	for f := range block.Facts.Iter() {
 		err := b.AddFact(f)
 		if err != nil {
 			return err
@@ -259,13 +262,18 @@ func (b *blockBuilder) AddBlock(block ParsedBlock) error {
 			return err
 		}
 	}
+	for _, s := range block.Scope {
+		err := b.AddScope(s)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
 
 func (b *blockBuilder) AddFact(fact Fact) error {
-	dlFact := fact.convert(b.symbols)
-	if !b.facts.Insert(dlFact) {
+	if wasInserted := b.facts.Insert(fact); !wasInserted {
 		return ErrDuplicateFact
 	}
 
@@ -273,15 +281,19 @@ func (b *blockBuilder) AddFact(fact Fact) error {
 }
 
 func (b *blockBuilder) AddRule(rule Rule) error {
-	dlRule := rule.convert(b.symbols)
-	b.rules = append(b.rules, dlRule)
+	b.rules = append(b.rules, rule)
+
+	return nil
+}
+
+func (b *blockBuilder) AddScope(scope Scope) error {
+	b.scopes = append(b.scopes, scope)
 
 	return nil
 }
 
 func (b *blockBuilder) AddCheck(check Check) error {
-	dlCheck := check.convert(b.symbols)
-	b.checks = append(b.checks, dlCheck)
+	b.checks = append(b.checks, check)
 
 	return nil
 }
@@ -290,24 +302,103 @@ func (b *blockBuilder) SetContext(context string) {
 	b.context = context
 }
 
-func (b *blockBuilder) Build() *Block {
-	b.symbols = b.symbols.SplitOff(b.symbolsStart)
+func (b *blockBuilder) SetBlockID(blockID uint64) {
+	b.blockID = blockID
+}
 
-	facts := make(datalog.FactSet, len(*b.facts))
-	copy(facts, *b.facts)
+func (b *blockBuilder) Build(
+	symbols datalog.SymbolTable,
+	publicKeys datalog.PublicKeyTable,
+	signatureRegistry datalog.SignatureRegistry,
+) *Block {
+	config := blockBuilderConfig{
+		symbols:           symbols,
+		symbolsStart:      len(symbols),
+		publicKeys:        publicKeys,
+		publicKeysStart:   len(publicKeys),
+		signatureRegistry: signatureRegistry,
+	}
 
-	rules := make([]datalog.Rule, len(b.rules))
-	copy(rules, b.rules)
+	for _, opt := range b.buildOptions {
+		opt(&config)
+	}
 
-	checks := make([]datalog.Check, len(b.checks))
-	copy(checks, b.checks)
+	facts := make([]datalog.Fact, b.facts.Size())
+	{
+		index := 0
+		for fact := range b.facts.Iter() {
+			dlFact := fact.convert(&config.symbols)
+			facts[index] = dlFact
+			index++
+		}
+	}
+
+	rules := make([]datalog.Rule, 0, len(b.rules))
+	for _, rule := range b.rules {
+		dlRule := rule.Convert(&config.symbols, &config.publicKeys)
+		rules = append(rules, dlRule)
+	}
+
+	dlChecks := make([]datalog.Check, 0, len(b.checks))
+	for _, check := range b.checks {
+		dlCheck := check.Convert(&config.symbols, &config.publicKeys)
+
+		dlChecks = append(dlChecks, dlCheck)
+	}
+
+	scopes := make([]datalog.Scope, 0, len(b.scopes))
+	for _, scope := range b.scopes {
+		dlScope := scope.convert(&config.publicKeys)
+		scopes = append(scopes, dlScope)
+	}
 
 	return &Block{
-		symbols: b.symbols.Clone(),
-		facts:   &facts,
-		rules:   rules,
-		checks:  checks,
-		context: b.context,
-		version: MaxSchemaVersion,
+		symbols:    config.symbols.SplitOff(config.symbolsStart),
+		publicKeys: config.publicKeys.SplitOff(config.publicKeysStart),
+		facts:      facts,
+		rules:      rules,
+		scopes:     scopes,
+		checks:     dlChecks,
+		context:    b.context,
+
+		// TODO: Use biscuit-rust's datalog version heuristic when creating biscuits and appending signedBlocks
+		// - This is a hack to add some initial support for third party signedBlocks to biscuit-go.
+		version: minimumDatalogVersionForThirdPartyBlocks,
 	}
+}
+
+// TODO determine whether this is required to check before further unmarshalling, or if we could just rely on
+// internal/crypto package to check key/signature sizes as they are being decoded. Ideally, size checks around keys and
+// signatures should be done closer to the decoding code.
+func verifySignedBlockCryptoSizes(sb *pb.SignedBlock) error {
+	switch sb.GetNextKey().GetAlgorithm() {
+	case pb.PublicKey_Ed25519:
+		if len(sb.NextKey.Key) != ed25519.PublicKeySize {
+			return ErrInvalidKeySize
+		}
+		if len(sb.Signature) != ed25519.SignatureSize {
+			return ErrInvalidSignatureSize
+		}
+
+	case pb.PublicKey_SECP256R1:
+		// Pub key size for SEC1 compressed representation is ⌊1 + ((256 + 7)/8)⌋ where 256 is bitsize for curve
+		//
+		// ref: https://cs.opensource.google/go/go/+/refs/tags/go1.24.0:src/crypto/elliptic/elliptic.go;l=185
+		if len(sb.NextKey.Key) != 33 {
+			return ErrInvalidKeySize
+		}
+		// Size for an ASN.1 encoded secp256r1 signature is bounded at 73 bytes.
+		//
+		// ref:
+		//   - https://www.itu.int/rec/t-rec-x.690/en
+		//   - https://crypto.stackexchange.com/a/83977
+		if len(sb.Signature) > 73 {
+			return ErrInvalidSignatureSize
+		}
+
+	default:
+		return errors.New("biscuit: unknown signature algorithm in authority block")
+	}
+
+	return nil
 }

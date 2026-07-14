@@ -3,7 +3,7 @@
 set -ueo pipefail
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-SAMPLES_REV="1.0"
+SAMPLES_REV="v3.3"
 
 TMP_DIR="${DIR}/../build"
 SAMPLES_DIR="${DIR}/../samples"
@@ -19,9 +19,9 @@ if [ -d "${TMP_DIR}/biscuit_spec" ]; then
     cleanup
 fi
 
-git -C "${TMP_DIR}" clone https://github.com/CleverCloud/biscuit.git biscuit_spec
+git -C "${TMP_DIR}" clone https://github.com/eclipse-biscuit/biscuit biscuit_spec
 git -C "${TMP_DIR}/biscuit_spec" checkout "${SAMPLES_REV}"
-rsync -prav --delete-before "${TMP_DIR}/biscuit_spec/samples/" "${SAMPLES_DIR}/data"
+rsync -prav --delete-before "${TMP_DIR}/biscuit_spec/samples/current/" "${SAMPLES_DIR}/data/current"
 
 # extract keys from READMEs
 for f in $(find "${SAMPLES_DIR}/data" -name README.md); do
