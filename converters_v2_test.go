@@ -727,7 +727,7 @@ func TestBlockConvertV2(t *testing.T) {
 		symbols: &datalog.SymbolTable{"a", "b", "c", "d"},
 		facts:   &datalog.FactSet{datalog.Fact{Predicate: predicate}},
 		rules:   []datalog.Rule{*rule},
-		checks:  []datalog.Check{{Queries: []datalog.Rule{*rule}}},
+		checks:  []datalog.Check{{CheckKind: datalog.CheckKindOne, Queries: []datalog.Rule{*rule}}},
 		context: "context",
 		version: 3,
 	}
@@ -740,7 +740,7 @@ func TestBlockConvertV2(t *testing.T) {
 			{Predicate: pbPredicate},
 		},
 		RulesV2:  []*pb.RuleV2{pbRule},
-		ChecksV2: []*pb.CheckV2{{Queries: []*pb.RuleV2{pbRule}}},
+		ChecksV2: []*pb.CheckV2{{Kind: pb.CheckV2_One.Enum(), Queries: []*pb.RuleV2{pbRule}}},
 		Context:  &ctx,
 		Version:  proto.Uint32(version),
 	}

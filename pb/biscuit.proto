@@ -2,6 +2,8 @@ syntax = "proto2";
 
 option go_package = ".;pb";
 
+package biscuit.format.schema;
+
 message Biscuit {
   optional uint32 rootKeyId = 1;
   required SignedBlock authority = 2;
@@ -13,6 +15,12 @@ message SignedBlock {
   required bytes block = 1;
   required PublicKey nextKey = 2;
   required bytes signature = 3;
+  optional ExternalSignature externalSignature = 4;
+}
+
+message ExternalSignature {
+  required bytes signature = 1;
+  required PublicKey publicKey = 2;
 }
 
 message PublicKey {
@@ -40,6 +48,20 @@ message Block {
   repeated FactV2 facts_v2 = 4;
   repeated RuleV2 rules_v2 = 5;
   repeated CheckV2 checks_v2 = 6;
+  repeated Scope scope = 7;
+  repeated PublicKey publicKeys = 8;
+}
+
+message Scope {
+  enum ScopeType {
+    Authority = 0;
+    Previous  = 1;
+  }
+
+  oneof Content {
+    ScopeType scopeType = 1;
+    int64 publicKey = 2;
+  }
 }
 
 message FactV2 {
@@ -50,10 +72,17 @@ message RuleV2 {
   required PredicateV2 head = 1;
   repeated PredicateV2 body = 2;
   repeated ExpressionV2 expressions = 3;
+  repeated Scope scope = 4;
 }
 
 message CheckV2 {
   repeated RuleV2 queries = 1;
+  optional Kind kind = 2;
+
+  enum Kind {
+    One = 0;
+    All = 1;
+  }
 }
 
 message PredicateV2 {
@@ -118,6 +147,10 @@ message OpBinary {
     Or = 14;
     Intersection = 15;
     Union = 16;
+    BitwiseAnd = 17;
+    BitwiseOr = 18;
+    BitwiseXor = 19;
+    NotEqual = 20;
   }
 
   required Kind kind = 1;
@@ -140,4 +173,61 @@ message AuthorizerPolicies {
   repeated RuleV2 rules = 4;
   repeated CheckV2 checks = 5;
   repeated Policy policies = 6;
+}
+
+message ThirdPartyBlockRequest {
+  required PublicKey previousKey = 1;
+  repeated PublicKey publicKeys = 2;
+}
+
+message ThirdPartyBlockContents {
+  required bytes payload = 1;
+  required ExternalSignature externalSignature = 2;
+}
+
+message AuthorizerSnapshot {
+  required RunLimits limits = 1;
+  required uint64 executionTime = 2;
+  required AuthorizerWorld world = 3;
+}
+
+message RunLimits {
+  required uint64 maxFacts = 1;
+  required uint64 maxIterations = 2;
+  required uint64 maxTime = 3;
+}
+
+message AuthorizerWorld {
+  optional uint32 version = 1;
+  repeated string symbols = 2;
+  repeated PublicKey publicKeys = 3;
+  repeated SnapshotBlock blocks = 4;
+  required SnapshotBlock authorizerBlock = 5;
+  repeated Policy authorizerPolicies = 6;
+  repeated GeneratedFacts generatedFacts = 7;
+  required uint64 iterations = 8;
+}
+
+message Origin {
+  oneof Content {
+    Empty authorizer = 1;
+    uint32 origin = 2;
+  }
+}
+
+message Empty {}
+
+message GeneratedFacts {
+  repeated Origin origins = 1;
+  repeated FactV2 facts = 2;
+}
+
+message SnapshotBlock {
+  optional string context = 1;
+  optional uint32 version = 2;
+  repeated FactV2 facts_v2 = 3;
+  repeated RuleV2 rules_v2 = 4;
+  repeated CheckV2 checks_v2 = 5;
+  repeated Scope scope = 6;
+  optional PublicKey externalKey = 7;
 }

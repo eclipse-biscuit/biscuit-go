@@ -280,6 +280,8 @@ func (op BinaryOp) Print(left, right string) string {
 		out = fmt.Sprintf("%s >= %s", left, right)
 	case BinaryEqual:
 		out = fmt.Sprintf("%s == %s", left, right)
+	case BinaryNotEqual:
+		out = fmt.Sprintf("%s != %s", left, right)
 	case BinaryContains:
 		out = fmt.Sprintf("%s.contains(%s)", left, right)
 	case BinaryPrefix:
@@ -304,6 +306,12 @@ func (op BinaryOp) Print(left, right string) string {
 		out = fmt.Sprintf("%s.intersection(%s)", left, right)
 	case BinaryUnion:
 		out = fmt.Sprintf("%s.union(%s)", left, right)
+	case BinaryBitwiseAnd:
+		out = fmt.Sprintf("%s & %s", left, right)
+	case BinaryBitwiseOr:
+		out = fmt.Sprintf("%s | %s", left, right)
+	case BinaryBitwiseXor:
+		out = fmt.Sprintf("%s ^ %s", left, right)
 	default:
 		out = fmt.Sprintf("unknown(%s, %s)", left, right)
 	}
@@ -335,6 +343,10 @@ const (
 	BinaryOr
 	BinaryIntersection
 	BinaryUnion
+	BinaryBitwiseAnd
+	BinaryBitwiseOr
+	BinaryBitwiseXor
+	BinaryNotEqual
 )
 
 // LessThan returns true when left is less than right.
@@ -442,8 +454,7 @@ func (GreaterOrEqual) Eval(left Term, right Term, _ *SymbolTable) (Term, error) 
 }
 
 // Equal returns true when left and right are equal.
-// It requires left and right to have the same concrete type
-// and only accepts Integer, Bytes or String.
+// It requires left and right to have the same concrete type.
 type Equal struct{}
 
 func (Equal) Type() BinaryOpType {
@@ -467,6 +478,33 @@ func (Equal) Eval(left Term, right Term, _ *SymbolTable) (Term, error) {
 	}
 
 	return Bool(left.Equal(right)), nil
+}
+
+// NotEqual returns true when left and right are not equal.
+// It requires left and right to have the same concrete type.
+type NotEqual struct{}
+
+func (NotEqual) Type() BinaryOpType {
+	return BinaryNotEqual
+}
+func (NotEqual) Eval(left Term, right Term, _ *SymbolTable) (Term, error) {
+	if g, w := left.Type(), right.Type(); g != w {
+		return nil, fmt.Errorf("datalog: Equal type mismatch: %d != %d", g, w)
+	}
+
+	switch left.Type() {
+	case TermTypeInteger:
+	case TermTypeBytes:
+	case TermTypeString:
+	case TermTypeDate:
+	case TermTypeBool:
+	case TermTypeSet:
+
+	default:
+		return nil, fmt.Errorf("datalog: unexpected Equal value type: %d", left.Type())
+	}
+
+	return Bool(!left.Equal(right)), nil
 }
 
 // Contains returns true when the right value exists in the left Set.
@@ -793,6 +831,69 @@ func (Or) Eval(left Term, right Term, _ *SymbolTable) (Term, error) {
 	}
 
 	return Bool(bleft || bright), nil
+}
+
+// BitwiseAnd performs the bitwise and of left and right and returns the result.
+// It requires left and right to be Integer.
+type BitwiseAnd struct{}
+
+func (BitwiseAnd) Type() BinaryOpType {
+	return BinaryBitwiseAnd
+}
+func (BitwiseAnd) Eval(left Term, right Term, _ *SymbolTable) (Term, error) {
+	ileft, ok := left.(Integer)
+	if !ok {
+		return nil, fmt.Errorf("datalog: BitwiseAnd requires left value to be an Integer, got %T", left)
+	}
+	iright, ok := right.(Integer)
+	if !ok {
+		return nil, fmt.Errorf("datalog: BitwiseAnd requires right value to be an Integer, got %T", right)
+	}
+
+	res := ileft & iright
+	return res, nil
+}
+
+// BitwiseOr performs the bitwise or of left and right and returns the result.
+// It requires left and right to be Integer.
+type BitwiseOr struct{}
+
+func (BitwiseOr) Type() BinaryOpType {
+	return BinaryBitwiseOr
+}
+func (BitwiseOr) Eval(left Term, right Term, _ *SymbolTable) (Term, error) {
+	ileft, ok := left.(Integer)
+	if !ok {
+		return nil, fmt.Errorf("datalog: BitwiseOr requires left value to be an Integer, got %T", left)
+	}
+	iright, ok := right.(Integer)
+	if !ok {
+		return nil, fmt.Errorf("datalog: BitwiseOr requires right value to be an Integer, got %T", right)
+	}
+
+	res := ileft | iright
+	return res, nil
+}
+
+// BitwiseXor performs the bitwise xor of left and right and returns the result.
+// It requires left and right to be Integer.
+type BitwiseXor struct{}
+
+func (BitwiseXor) Type() BinaryOpType {
+	return BinaryBitwiseXor
+}
+func (BitwiseXor) Eval(left Term, right Term, _ *SymbolTable) (Term, error) {
+	ileft, ok := left.(Integer)
+	if !ok {
+		return nil, fmt.Errorf("datalog: BitwiseXor requires left value to be an Integer, got %T", left)
+	}
+	iright, ok := right.(Integer)
+	if !ok {
+		return nil, fmt.Errorf("datalog: BitwiseXor requires right value to be an Integer, got %T", right)
+	}
+
+	res := ileft ^ iright
+	return res, nil
 }
 
 type stack []Term
