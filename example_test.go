@@ -4,6 +4,7 @@
 package biscuit_test
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 )
 
 func ExampleBiscuit() {
+	ctx := context.Background()
 	rng := rand.Reader
 	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
 
@@ -91,7 +93,7 @@ func ExampleBiscuit() {
 	}
 	v1.AddAuthorizer(authorizer)
 
-	if err := v1.Authorize(); err != nil {
+	if err := v1.Authorize(ctx); err != nil {
 		// fmt.Println(v1.PrintWorld())
 
 		fmt.Println("forbidden to read /a/file1.txt")
@@ -114,7 +116,7 @@ func ExampleBiscuit() {
 	}
 	v1.AddAuthorizer(authorizer)
 
-	if err := v1.Authorize(); err != nil {
+	if err := v1.Authorize(ctx); err != nil {
 		fmt.Println("forbidden to write /a/file1.txt")
 	} else {
 		fmt.Println("allowed to write /a/file1.txt")

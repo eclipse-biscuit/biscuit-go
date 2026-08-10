@@ -4,6 +4,7 @@
 package datalog
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"testing"
@@ -22,6 +23,8 @@ func hashVar(s string) Variable {
 }
 
 func TestFamily(t *testing.T) {
+	ctx := context.Background()
+
 	w := NewWorld()
 	syms := &SymbolTable{}
 	dbg := SymbolDebugger{syms}
@@ -60,12 +63,12 @@ func TestFamily(t *testing.T) {
 
 	t.Logf("adding r2: %s", dbg.Rule(r2))
 	w.AddRule(r2)
-	if err := w.Run(syms); err != nil {
+	if err := w.Run(ctx, syms); err != nil {
 		t.Error(err)
 	}
 
 	w.AddFact(Fact{Predicate{parent, []Term{c, e}}})
-	if err := w.Run(syms); err != nil {
+	if err := w.Run(ctx, syms); err != nil {
 		t.Error(err)
 	}
 
@@ -483,6 +486,7 @@ func TestSetEqual(t *testing.T) {
 }
 
 func TestWorldRunLimits(t *testing.T) {
+	ctx := context.Background()
 	syms := &SymbolTable{}
 	a := syms.Insert("A")
 	b := syms.Insert("B")
@@ -553,6 +557,6 @@ func TestWorldRunLimits(t *testing.T) {
 		}
 
 		w.AddRule(r1)
-		require.Equal(t, tc.expectedErr, w.Run(syms))
+		require.Equal(t, tc.expectedErr, w.Run(ctx, syms))
 	}
 }
