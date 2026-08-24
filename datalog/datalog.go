@@ -5,7 +5,6 @@ package datalog
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -378,54 +377,32 @@ func (w *World) Rules() []Rule {
 }
 
 func (w *World) Run(syms *SymbolTable) error {
-	done := make(chan error)
-	ctx, cancel := context.WithTimeout(context.Background(), w.runLimits.maxDuration)
-	defer cancel()
-
-	go func() {
-		for i := 0; i < w.runLimits.maxIterations; i++ {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				var newFacts FactSet
-				for _, r := range w.rules {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						if err := r.Apply(w.facts, &newFacts, syms); err != nil {
-							done <- err
-							return
-						}
-					}
-				}
-
-				prevCount := len(*w.facts)
-				w.facts.InsertAll([]Fact(newFacts))
-
-				newCount := len(*w.facts)
-				if newCount >= w.runLimits.maxFacts {
-					done <- ErrWorldRunLimitMaxFacts
-					return
-				}
-
-				// last iteration did not generate any new facts, so we can stop here
-				if newCount == prevCount {
-					done <- nil
-					return
-				}
+	deadline := time.Now().Add(w.runLimits.maxDuration)
+	for i := 0; i < w.runLimits.maxIterations; i++ {
+		var newFacts FactSet
+		for _, r := range w.rules {
+			if time.Now().After(deadline) {
+				return ErrWorldRunLimitTimeout
+			}
+			if err := r.Apply(w.facts, &newFacts, syms); err != nil {
+				return err
 			}
 		}
-		done <- ErrWorldRunLimitMaxIterations
-	}()
 
-	select {
-	case <-ctx.Done():
-		return ErrWorldRunLimitTimeout
-	case err := <-done:
-		return err
+		prevCount := len(*w.facts)
+		w.facts.InsertAll([]Fact(newFacts))
+
+		newCount := len(*w.facts)
+		if newCount >= w.runLimits.maxFacts {
+			return ErrWorldRunLimitMaxFacts
+		}
+
+		// last iteration did not generate any new facts, so we can stop here
+		if newCount == prevCount {
+			return nil
+		}
 	}
+	return ErrWorldRunLimitMaxIterations
 }
 
 func (w *World) Query(pred Predicate) *FactSet {
@@ -520,7 +497,7 @@ func combine(variables MatchedVariables, predicates []Predicate, expressions []E
 
 		current := 0
 		indexes := make([]int, len(predicates))
-		//fmt.Printf("combine variables %+v preds %+v exp %+v facts %+v indexes %+v\n", variables, predicates, expressions, *facts, indexes)
+		// fmt.Printf("combine variables %+v preds %+v exp %+v facts %+v indexes %+v\n", variables, predicates, expressions, *facts, indexes)
 
 		// cannot apply a rule on an empty list of facts
 		if len(predicates) > 0 && len(*facts) == 0 {
@@ -560,7 +537,7 @@ func combine(variables MatchedVariables, predicates []Predicate, expressions []E
 		match:
 			for i, pred := range predicates {
 				fact := (*facts)[indexes[i]]
-				//fmt.Printf("evaluating predicate(%d) %+v with fact %+v\n", i, pred, fact)
+				// fmt.Printf("evaluating predicate(%d) %+v with fact %+v\n", i, pred, fact)
 
 				for j := 0; j < len(pred.Terms); j++ {
 					term := pred.Terms[j]
@@ -577,10 +554,10 @@ func combine(variables MatchedVariables, predicates []Predicate, expressions []E
 				}
 			}
 
-			//fmt.Printf("evaluating indexes %+v with extracted variables %+v, matching = %+v\n", indexes, variables, matching)
+			// fmt.Printf("evaluating indexes %+v with extracted variables %+v, matching = %+v\n", indexes, variables, matching)
 			if matching {
 				if complete_vars := vars.Complete(); complete_vars != nil {
-					//fmt.Printf("variables are complete, evaluating expressions\n")
+					// fmt.Printf("variables are complete, evaluating expressions\n")
 					valid := true
 					for _, e := range expressions {
 						res, err := e.Evaluate(complete_vars, syms)
@@ -599,7 +576,7 @@ func combine(variables MatchedVariables, predicates []Predicate, expressions []E
 					}
 
 					if valid {
-						//fmt.Printf("sending valid variables %+v\n", complete_vars)
+						// fmt.Printf("sending valid variables %+v\n", complete_vars)
 						c <- struct {
 							MatchedVariables
 							error
