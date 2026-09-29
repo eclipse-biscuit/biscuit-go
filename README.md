@@ -9,6 +9,15 @@ biscuit-go is an implementation of [Biscuit](https://github.com/eclipse-biscuit/
 - [biscuit specification](https://github.com/eclipse-biscuit/biscuit)
 - [biscuit-rust](https://github.com/eclipse-biscuit/biscuit-rust) for some more technical details.
 
+## Specification compatibility
+
+This library currently accepts datalog `v3.0` blocks (block version `3`, see `MaxSchemaVersion`).
+Support for newer datalog versions is landing incrementally.
+
+The [specification sample suite](./samples) runs in CI: samples using block versions above
+`MaxSchemaVersion` are verified to be rejected and otherwise skipped, so they become active as
+support for each version lands.
+
 ## Usage
 
 #### Create a biscuit
