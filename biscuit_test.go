@@ -261,6 +261,43 @@ func TestBiscuitRules(t *testing.T) {
 	verifyOwner(t, *b2, publicRoot, map[string]bool{"alice": true, "bob": false, "eve": false})
 }
 
+// A check that compares two sets of byte arrays used to crash the authorizer.
+func TestBiscuitBytesSetEquality(t *testing.T) {
+	rng := rand.Reader
+	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
+
+	builder := NewBuilder(privateRoot)
+	builder.AddAuthorityFact(Fact{
+		Predicate: Predicate{Name: "keys", IDs: []Term{Set{Bytes{0x01}, Bytes{0x02}}}},
+	})
+	builder.AddAuthorityCheck(Check{Queries: []Rule{
+		{
+			Head: Predicate{Name: "known_keys", IDs: []Term{Variable("k")}},
+			Body: []Predicate{{Name: "keys", IDs: []Term{Variable("k")}}},
+			Expressions: []Expression{
+				{
+					Value{Variable("k")},
+					Value{Set{Bytes{0x02}, Bytes{0x01}}},
+					BinaryEqual,
+				},
+			},
+		},
+	}})
+
+	b, err := builder.Build()
+	require.NoError(t, err)
+
+	ser, err := b.Serialize()
+	require.NoError(t, err)
+	deser, err := Unmarshal(ser)
+	require.NoError(t, err)
+
+	v, err := deser.AuthorizerFor(WithSingularRootPublicKey(publicRoot))
+	require.NoError(t, err)
+	v.AddPolicy(DefaultAllowPolicy)
+	require.NoError(t, v.Authorize())
+}
+
 func verifyOwner(t *testing.T, b Biscuit, publicRoot ed25519.PublicKey, owners map[string]bool) {
 	for user, valid := range owners {
 		v, err := b.AuthorizerFor(WithSingularRootPublicKey(publicRoot))

@@ -473,6 +473,18 @@ func TestSetEqual(t *testing.T) {
 			s2:    Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("d")},
 			equal: false,
 		},
+		{
+			desc:  "equal with bytes elements",
+			s1:    Set{Bytes{0x01}, Bytes{0x02}},
+			s2:    Set{Bytes{0x02}, Bytes{0x01}},
+			equal: true,
+		},
+		{
+			desc:  "not equal with different bytes elements",
+			s1:    Set{Bytes{0x01}, Bytes{0x02}},
+			s2:    Set{Bytes{0x01}, Bytes{0x03}},
+			equal: false,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -480,6 +492,46 @@ func TestSetEqual(t *testing.T) {
 			require.Equal(t, testCase.equal, testCase.s1.Equal(testCase.s2))
 		})
 	}
+}
+
+func TestSetIntersectUnionBytes(t *testing.T) {
+	s1 := Set{Bytes{0x01}, Bytes{0x02}}
+	s2 := Set{Bytes{0x02}, Bytes{0x03}}
+
+	require.True(t, Set{Bytes{0x02}}.Equal(s1.Intersect(s2)))
+	require.True(t, Set{Bytes{0x01}, Bytes{0x02}, Bytes{0x03}}.Equal(s1.Union(s2)))
+}
+
+// Adding a fact compares it to the existing ones with Set.Equal.
+// This used to panic when the set held byte arrays.
+func TestWorldFactsWithBytesSets(t *testing.T) {
+	w := NewWorld()
+	syms := &SymbolTable{}
+	keys := syms.Insert("keys")
+	first := syms.Insert("first")
+
+	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}})
+	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x02}, Bytes{0x01}}}}})
+	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x03}}}}})
+	require.Len(t, *w.Facts(), 2)
+
+	w.AddRule(Rule{
+		Head: Predicate{first, []Term{Variable(0)}},
+		Body: []Predicate{{keys, []Term{Variable(0)}}},
+		Expressions: []Expression{{
+			Value{Variable(0)},
+			Value{Set{Bytes{0x01}, Bytes{0x02}}},
+			BinaryOp{Equal{}},
+		}},
+	})
+	require.NoError(t, w.Run(syms))
+
+	expected := &FactSet{
+		{Predicate{keys, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}},
+		{Predicate{keys, []Term{Set{Bytes{0x03}}}}},
+		{Predicate{first, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}},
+	}
+	require.True(t, expected.Equal(w.Facts()), "have: %v", SymbolDebugger{syms}.FactSet(w.Facts()))
 }
 
 func TestWorldRunLimits(t *testing.T) {
