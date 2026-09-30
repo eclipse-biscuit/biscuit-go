@@ -6,6 +6,7 @@ package datalog
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"reflect"
 	"testing"
 	"time"
 
@@ -512,6 +513,28 @@ func TestSetIntersectUnionBytes(t *testing.T) {
 
 	require.True(t, Set{Bytes{0x02}}.Equal(s1.Intersect(s2)))
 	require.True(t, Set{Bytes{0x01}, Bytes{0x02}, Bytes{0x03}}.Equal(s1.Union(s2)))
+}
+
+// One value per concrete Term type. Equal must be reflexive, symmetric and
+// false across types, and every implementation must be a value type.
+func TestTermEqualContract(t *testing.T) {
+	terms := []Term{
+		Variable(1),
+		Integer(1),
+		String(1),
+		Date(1),
+		Bytes{0x01},
+		Bool(true),
+		Set{Integer(1)},
+	}
+
+	for i, a := range terms {
+		require.NotEqual(t, reflect.Pointer, reflect.TypeOf(a).Kind(), "%T must be a value type", a)
+		for j, b := range terms {
+			require.Equal(t, i == j, a.Equal(b), "%v.Equal(%v)", a, b)
+			require.Equal(t, i == j, b.Equal(a), "%v.Equal(%v)", b, a)
+		}
+	}
 }
 
 // Adding a fact compares it to the existing ones with Set.Equal.

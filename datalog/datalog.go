@@ -26,11 +26,26 @@ const (
 	TermTypeSet
 )
 
+// Term is a value in a predicate. Implementations are value types and
+// Equal compares by value, using a type assertion on the concrete type.
+// Do not store a pointer to a term (such as *Bytes) in a Term: the
+// pointer would still satisfy the interface, but Equal would not match it.
 type Term interface {
 	Type() TermType
 	Equal(Term) bool
 	String() string
 }
+
+// Keep the value types implementing Term; a pointer receiver on any of them would break Equal.
+var (
+	_ Term = Variable(0)
+	_ Term = Integer(0)
+	_ Term = String(0)
+	_ Term = Date(0)
+	_ Term = Bytes(nil)
+	_ Term = Bool(false)
+	_ Term = Set(nil)
+)
 
 type Set []Term
 
