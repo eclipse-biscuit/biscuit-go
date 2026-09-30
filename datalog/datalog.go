@@ -425,12 +425,9 @@ func (w *World) Query(pred Predicate) *FactSet {
 			fID := f.Terms[i]
 			pID := pred.Terms[i]
 
-			if pID.Type() != TermTypeVariable {
-				if fID.Type() != pID.Type() || fID != pID {
-					matches = false
-					break
-				}
-
+			if pID.Type() != TermTypeVariable && !fID.Equal(pID) {
+				matches = false
+				break
 			}
 		}
 
