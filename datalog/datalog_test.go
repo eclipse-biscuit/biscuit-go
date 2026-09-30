@@ -534,6 +534,30 @@ func TestWorldFactsWithBytesSets(t *testing.T) {
 	require.True(t, expected.Equal(w.Facts()), "have: %v", SymbolDebugger{syms}.FactSet(w.Facts()))
 }
 
+// Query used to compare terms with ==, which panics on slice-backed terms.
+func TestWorldQueryBytesAndSetTerms(t *testing.T) {
+	w := NewWorld()
+	syms := &SymbolTable{}
+	key := syms.Insert("key")
+	keys := syms.Insert("keys")
+
+	w.AddFact(Fact{Predicate{key, []Term{Bytes{0x01}}}})
+	w.AddFact(Fact{Predicate{key, []Term{Bytes{0x02}}}})
+	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}})
+
+	res := w.Query(Predicate{key, []Term{Bytes{0x01}}})
+	require.True(t, (&FactSet{{Predicate{key, []Term{Bytes{0x01}}}}}).Equal(res))
+
+	res = w.Query(Predicate{key, []Term{Bytes{0x03}}})
+	require.Empty(t, *res)
+
+	res = w.Query(Predicate{keys, []Term{Set{Bytes{0x02}, Bytes{0x01}}}})
+	require.Len(t, *res, 1)
+
+	res = w.Query(Predicate{key, []Term{Variable(0)}})
+	require.Len(t, *res, 2)
+}
+
 func TestWorldRunLimits(t *testing.T) {
 	syms := &SymbolTable{}
 	a := syms.Insert("A")
