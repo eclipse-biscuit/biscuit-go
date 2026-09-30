@@ -485,6 +485,18 @@ func TestSetEqual(t *testing.T) {
 			s2:    Set{Bytes{0x01}, Bytes{0x03}},
 			equal: false,
 		},
+		{
+			desc:  "not equal when one side has a duplicate hiding a missing element",
+			s1:    Set{Integer(1), Integer(1)},
+			s2:    Set{Integer(1), Integer(2)},
+			equal: false,
+		},
+		{
+			desc:  "not equal when the other side has the duplicate",
+			s1:    Set{Integer(1), Integer(2)},
+			s2:    Set{Integer(1), Integer(1)},
+			equal: false,
+		},
 	}
 
 	for _, testCase := range testCases {

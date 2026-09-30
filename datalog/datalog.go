@@ -52,8 +52,14 @@ func (s Set) Equal(t Term) bool {
 		return false
 	}
 
+	// Both directions: a duplicate on one side could otherwise hide a missing element.
 	for _, e := range s {
 		if !c.contains(e) {
+			return false
+		}
+	}
+	for _, e := range c {
+		if !s.contains(e) {
 			return false
 		}
 	}
