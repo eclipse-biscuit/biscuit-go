@@ -1,8 +1,8 @@
 IMAGE ?= biscuit-go-test
 
-.PHONY: all build test test-local verify clean
+.PHONY: all build test test-local verify lint clean
 
-all: verify test
+all: verify lint test
 
 build:
 	go build ./...
@@ -19,6 +19,10 @@ test-local:
 
 verify:
 	./script/verify.sh
+
+# Downloads a pinned golangci-lint into build/bin on first use.
+lint:
+	./script/lint.sh
 
 clean:
 	rm -rf build
