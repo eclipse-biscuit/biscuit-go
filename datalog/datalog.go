@@ -35,19 +35,25 @@ type Term interface {
 type Set []Term
 
 func (Set) Type() TermType { return TermTypeSet }
+
+// Bytes is a slice and cannot be a map key, so look up elements with Equal.
+func (s Set) contains(t Term) bool {
+	for _, e := range s {
+		if e.Equal(t) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s Set) Equal(t Term) bool {
 	c, ok := t.(Set)
 	if !ok || len(c) != len(s) {
 		return false
 	}
 
-	cmap := make(map[Term]struct{}, len(c))
-	for _, v := range c {
-		cmap[v] = struct{}{}
-	}
-
-	for _, id := range s {
-		if _, ok := cmap[id]; !ok {
+	for _, e := range s {
+		if !c.contains(e) {
 			return false
 		}
 	}
@@ -62,32 +68,22 @@ func (s Set) String() string {
 	return fmt.Sprintf("[%s]", strings.Join(eltStr, ", "))
 }
 func (s Set) Intersect(t Set) Set {
-	other := make(map[Term]struct{}, len(t))
-	for _, v := range t {
-		other[v] = struct{}{}
-	}
-
 	result := Set{}
 
-	for _, id := range s {
-		if _, ok := other[id]; ok {
-			result = append(result, id)
+	for _, e := range s {
+		if t.contains(e) {
+			result = append(result, e)
 		}
 	}
 	return result
 }
 func (s Set) Union(t Set) Set {
-	this := make(map[Term]struct{}, len(s))
-	for _, v := range s {
-		this[v] = struct{}{}
-	}
-
 	result := Set{}
 	result = append(result, s...)
 
-	for _, id := range t {
-		if _, ok := this[id]; !ok {
-			result = append(result, id)
+	for _, e := range t {
+		if !s.contains(e) {
+			result = append(result, e)
 		}
 	}
 
