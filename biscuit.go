@@ -56,7 +56,10 @@ var (
 
 	ErrInvalidKeySize = errors.New("biscuit: invalid key size")
 
-	UnsupportedAlgorithm = errors.New("biscuit: unsupported signature algorithm")
+	ErrUnsupportedAlgorithm = errors.New("biscuit: unsupported signature algorithm")
+
+	// Deprecated: use ErrUnsupportedAlgorithm.
+	UnsupportedAlgorithm = ErrUnsupportedAlgorithm
 )
 
 type biscuitOptions struct {
@@ -337,7 +340,7 @@ func (b *Biscuit) authorizerFor(root ed25519.PublicKey, opts ...AuthorizerOption
 
 	// for now we only support Ed25519
 	if *b.container.Authority.NextKey.Algorithm != pb.PublicKey_Ed25519 {
-		return nil, UnsupportedAlgorithm
+		return nil, ErrUnsupportedAlgorithm
 	}
 
 	algorithm := make([]byte, 4)
@@ -357,7 +360,7 @@ func (b *Biscuit) authorizerFor(root ed25519.PublicKey, opts ...AuthorizerOption
 
 	for _, block := range b.container.Blocks {
 		if *block.NextKey.Algorithm != pb.PublicKey_Ed25519 {
-			return nil, UnsupportedAlgorithm
+			return nil, ErrUnsupportedAlgorithm
 		}
 
 		algorithm := make([]byte, 4)

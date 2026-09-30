@@ -270,7 +270,7 @@ func (s *FactSet) Equal(x *FactSet) bool {
 	for _, f1 := range *x {
 		found := false
 		for _, f2 := range *s {
-			if f1.Predicate.Equal(f2.Predicate) {
+			if f1.Equal(f2.Predicate) {
 				found = true
 				break
 			}
@@ -414,19 +414,19 @@ func (w *World) Run(syms *SymbolTable) error {
 func (w *World) Query(pred Predicate) *FactSet {
 	res := &FactSet{}
 	for _, f := range *w.facts {
-		if f.Predicate.Name != pred.Name {
+		if f.Name != pred.Name {
 			continue
 		}
 
 		// if the predicate has a different number of IDs
 		// the fact must not match
-		if len(f.Predicate.Terms) != len(pred.Terms) {
+		if len(f.Terms) != len(pred.Terms) {
 			continue
 		}
 
 		matches := true
 		for i := 0; i < len(pred.Terms); i++ {
-			fID := f.Predicate.Terms[i]
+			fID := f.Terms[i]
 			pID := pred.Terms[i]
 
 			if pID.Type() != TermTypeVariable {
@@ -554,7 +554,7 @@ func combine(variables MatchedVariables, predicates []Predicate, expressions []E
 					if !ok {
 						continue
 					}
-					v := fact.Predicate.Terms[j]
+					v := fact.Terms[j]
 					if !vars.Insert(k, v) {
 						matching = false
 						break match

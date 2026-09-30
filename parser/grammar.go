@@ -557,7 +557,7 @@ func (a *Term) ToBiscuit(parameters ParametersMap) (biscuit.Term, error) {
 		}
 		biscuitTerm = biscuitSet
 	case a.Parameter != nil:
-		var paramName string = string(*(a.Parameter))
+		paramName := string(*(a.Parameter))
 		paramValue := parameters[paramName]
 		if paramValue == nil {
 			return nil, fmt.Errorf("parser: unbound parameter: %s", paramName)
