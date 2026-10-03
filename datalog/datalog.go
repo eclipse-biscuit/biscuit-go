@@ -94,9 +94,11 @@ func (s Set) Compare(s2 Term) int {
 	return 0
 }
 
+// Hash visits the elements in sorted order: iteration order of the underlying
+// map is random, and equal sets must hash to the same value.
 func (s Set) Hash(builder *set.HashBuilder) *set.HashBuilder {
 	builder = builder.Byte(byte(s.Type()))
-	for term := range s.Iter() {
+	for _, term := range set.Sorted(s.Iter()) {
 		builder = builder.Hashable(term)
 	}
 	return builder

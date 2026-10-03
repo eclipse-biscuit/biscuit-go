@@ -843,6 +843,17 @@ func TestSetEqual(t *testing.T) {
 	}
 }
 
+// Two sets with the same elements must hash alike whatever order the
+// underlying map yields them in; otherwise a HashSet keeps both copies.
+func TestSetHashIgnoresElementOrder(t *testing.T) {
+	facts := set.NewHashSet[Term]()
+	for i := 0; i < 50; i++ {
+		facts.Insert(NewSet(Integer(1), Integer(2), Integer(3)))
+		facts.Insert(NewSet(Integer(3), Integer(2), Integer(1)))
+	}
+	require.Equal(t, 1, facts.Size())
+}
+
 func TestSetIntersectUnionBytes(t *testing.T) {
 	s1 := NewSet(Bytes{0x01}, Bytes{0x02})
 	s2 := NewSet(Bytes{0x02}, Bytes{0x03})
