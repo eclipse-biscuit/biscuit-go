@@ -9,6 +9,15 @@ biscuit-go is an implementation of [Biscuit](https://github.com/eclipse-biscuit/
 - [biscuit specification](https://github.com/eclipse-biscuit/biscuit)
 - [biscuit-rust](https://github.com/eclipse-biscuit/biscuit-rust) for some more technical details.
 
+## Specification compatibility
+
+This library currently accepts datalog `v3.0` blocks (block version `3`, see `MaxSchemaVersion`).
+Support for newer datalog versions is landing incrementally.
+
+The [specification sample suite](./samples) runs in CI: samples using block versions above
+`MaxSchemaVersion` are verified to be rejected and otherwise skipped, so they become active as
+support for each version lands.
+
 ## Usage
 
 #### Create a biscuit
@@ -54,7 +63,8 @@ if err != nil {
 }
 
 // Attenuate the biscuit by appending a new block to it
-blockBuilder := b.CreateBlock()
+blockID := 1
+blockBuilder := b.CreateBlock(blockID)
 block, err := parser.FromStringBlockWithParams(`
 		check if resource($file), operation($permission), [{read}].contains($permission);`,
 	map[string]biscuit.Term{"read": biscuit.String("read")})
@@ -63,11 +73,12 @@ if err != nil {
 }
 blockBuilder.AddBlock(block)
 
-attenuatedBiscuit, err := b.Append(rng, blockBuilder.Build())
+attenuatedBiscuit, err := b.AppendBlock(rng, blockBuilder)
 if err != nil {
     panic(fmt.Errorf("failed to append: %v", err))
 }
-attenuatedToken, err := b.Serialize()
+
+attenuatedToken, err := attenuatedBiscuit.Serialize()
 if err != nil {
     panic(fmt.Errorf("failed to serialize biscuit: %v", err))
 }
@@ -83,7 +94,7 @@ if err != nil {
     panic(fmt.Errorf("failed to deserialize token: %v", err))
 }
 
-authorizer, err := b.Authorizer(publicRoot)
+authorizerBuilder, err := b.Authorizer(publicRoot)
 if err != nil {
     panic(fmt.Errorf("failed to verify token and create authorizer: %v", err))
 }
@@ -96,7 +107,12 @@ authorizerContents, err := parser.FromStringAuthorizerWithParams(`
 if err != nil {
 	panic(fmt.Errorf("failed to parse authorizer: %v", err))
 }
-authorizer.AddAuthorizer(authorizerContents)
+
+authorizerBuilder.AddAuthorizer(authorizerContents)
+authorizer, err := authorizerBuilder.Build()
+if err != nil {
+    panic(fmt.Errorf("failed to build the authorizer: %v", err))
+}
 
 if err := authorizer.Authorize(); err != nil {
     fmt.Printf("failed authorizing token: %v\n", err)

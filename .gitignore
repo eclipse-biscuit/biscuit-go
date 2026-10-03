@@ -1,2 +1,4 @@
 build
 .gobincache
+
+.buf-plugins/

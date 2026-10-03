@@ -1,10 +1,14 @@
-FROM golang:1.19-buster
+FROM golang:1.27
 
-ADD go.mod go.sum /app/
-RUN cd /app && go mod download
-
-ADD . /app
+# Fail instead of silently downloading a newer toolchain: the image's Go
+# version is the one under test.
+ENV GOTOOLCHAIN=local
 
 WORKDIR /app
-CMD ["/app/script/test.sh"]
 
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+CMD ["./script/test.sh"]

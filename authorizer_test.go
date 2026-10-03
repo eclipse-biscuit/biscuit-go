@@ -28,16 +28,30 @@ func TestVerifierDefaultPolicy(t *testing.T) {
 	b, err := builder.Build()
 	require.NoError(t, err)
 
-	v, err := b.Authorizer(publicRoot)
+	vb, err := b.Authorizer(publicRoot)
 	require.NoError(t, err)
 
-	v.AddPolicy(DefaultDenyPolicy)
-	err = v.Authorize()
-	require.Equal(t, err, ErrPolicyDenied)
+	vb.AddPolicy(DefaultDenyPolicy)
 
-	v.Reset()
-	v.AddPolicy(DefaultAllowPolicy)
-	require.NoError(t, v.Authorize())
+	v1, err := vb.Build()
+	require.NoError(t, err)
+	err = v1.Authorize()
+	require.ErrorIs(t, err, ErrPolicyDenied)
+
+	v2, err := vb.Build()
+	require.NoError(t, err)
+	err = v2.Authorize()
+	require.ErrorIs(t, err, ErrPolicyDenied)
+
+	// Create fresh builder for allow policy test
+	vb3, err := b.Authorizer(publicRoot)
+	require.NoError(t, err)
+	vb3.AddPolicy(DefaultAllowPolicy)
+
+	v3, err := vb3.Build()
+	require.NoError(t, err)
+	err = v3.Authorize()
+	require.NoError(t, err)
 }
 
 func TestVerifierPolicies(t *testing.T) {
@@ -57,7 +71,7 @@ func TestVerifierPolicies(t *testing.T) {
 	b, err := builder.Build()
 	require.NoError(t, err)
 
-	v, err := b.Authorizer(publicRoot)
+	vb, err := b.Authorizer(publicRoot)
 	require.NoError(t, err)
 
 	policy := Policy{Kind: PolicyKindAllow, Queries: []Rule{
@@ -76,30 +90,41 @@ func TestVerifierPolicies(t *testing.T) {
 		},
 	}}
 
-	v.AddPolicy(policy)
-	v.AddFact(Fact{Predicate: Predicate{
-		Name: "operation",
-		IDs:  []Term{String("read")},
-	}})
-	v.AddFact(Fact{Predicate: Predicate{
-		Name: "resource",
-		IDs:  []Term{String("some_file.txt")},
-	}})
+	vb.AddPolicy(policy)
+	vb.AddFact(
+		Fact{Predicate: Predicate{
+			Name: "operation",
+			IDs:  []Term{String("read")}}},
+	)
+	vb.AddFact(
+		Fact{Predicate: Predicate{
+			Name: "resource",
+			IDs:  []Term{String("some_file.txt")}}},
+	)
 
-	require.NoError(t, v.Authorize())
-
-	v, err = b.Authorizer(publicRoot)
+	v1, err := vb.Build()
 	require.NoError(t, err)
-	v.AddPolicy(policy)
-	v.AddFact(Fact{Predicate: Predicate{
-		Name: "operation",
-		IDs:  []Term{String("write")},
-	}})
-	v.AddFact(Fact{Predicate: Predicate{
-		Name: "resource",
-		IDs:  []Term{String("some_file.txt")},
-	}})
-	require.Equal(t, v.Authorize(), ErrNoMatchingPolicy)
+
+	require.NoError(t, v1.Authorize())
+
+	vb, err = b.Authorizer(publicRoot)
+	require.NoError(t, err)
+	vb.AddPolicy(policy)
+	vb.AddFact(
+		Fact{Predicate: Predicate{
+			Name: "operation",
+			IDs:  []Term{String("write")}}},
+	)
+	vb.AddFact(
+		Fact{Predicate: Predicate{
+			Name: "resource",
+			IDs:  []Term{String("some_file.txt")}}},
+	)
+
+	v2, err := vb.Build()
+	require.NoError(t, err)
+
+	require.Equal(t, v2.Authorize(), ErrNoMatchingPolicy)
 }
 
 func TestVerifierSerializeLoad(t *testing.T) {
@@ -161,8 +186,8 @@ func TestVerifierSerializeLoad(t *testing.T) {
 
 	require.NoError(t, v2.LoadPolicies(s))
 
-	require.Equal(t, v1.(*authorizer).world.Facts(), v2.(*authorizer).world.Facts())
-	require.Equal(t, v1.(*authorizer).world.Rules(), v2.(*authorizer).world.Rules())
-	require.Equal(t, v1.(*authorizer).checks, v2.(*authorizer).checks)
-	require.Equal(t, v1.(*authorizer).policies, v2.(*authorizer).policies)
+	require.Equal(t, v1.(*authorizerBuilder).authorizerFacts, v2.(*authorizerBuilder).authorizerFacts)
+	require.Equal(t, v1.(*authorizerBuilder).authorizerRules, v2.(*authorizerBuilder).authorizerRules)
+	require.Equal(t, v1.(*authorizerBuilder).authorizerChecks, v2.(*authorizerBuilder).authorizerChecks)
+	require.Equal(t, v1.(*authorizerBuilder).authorizerPolicies, v2.(*authorizerBuilder).authorizerPolicies)
 }

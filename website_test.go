@@ -52,7 +52,7 @@ func CreateToken(root *ed25519.PrivateKey) (*biscuit.Biscuit, error) {
 }
 
 func Authorize(token *biscuit.Biscuit, root *ed25519.PublicKey) error {
-	authorizer, err := token.Authorizer(*root)
+	authorizerBuilder, err := token.Authorizer(*root)
 	if err != nil {
 		return fmt.Errorf("failed to create verifier: %v", err)
 	}
@@ -61,19 +61,24 @@ func Authorize(token *biscuit.Biscuit, root *ed25519.PublicKey) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse verifier fact: %v", err)
 	}
-	authorizer.AddFact(fact1)
+	authorizerBuilder.AddFact(fact1)
 
 	fact2, err := parser.FromStringFact(`operation("read")`)
 	if err != nil {
 		return fmt.Errorf("failed to parse verifier fact: %v", err)
 	}
-	authorizer.AddFact(fact2)
+	authorizerBuilder.AddFact(fact2)
 
 	policy, err := parser.FromStringPolicy(`allow if resource("/a/file1.txt")`)
 	if err != nil {
 		return fmt.Errorf("failed to parse verifier policy: %v", err)
 	}
-	authorizer.AddPolicy(policy)
+	authorizerBuilder.AddPolicy(policy)
+
+	authorizer, err := authorizerBuilder.Build()
+	if err != nil {
+		return fmt.Errorf("failed to build authorizer: %v", err)
+	}
 
 	return authorizer.Authorize()
 }
@@ -84,7 +89,7 @@ func Attenuate(serializedToken []byte, root *ed25519.PublicKey) ([]byte, error) 
 		return nil, fmt.Errorf("failed to deserialize biscuit: %v", err)
 	}
 
-	blockBuilder := token.CreateBlock()
+	blockBuilder := token.CreateBlock(0)
 
 	check, err := parser.FromStringCheck(`check if resource($file), operation($permission), ["read"].contains($permission)`)
 	if err != nil {
@@ -96,7 +101,7 @@ func Attenuate(serializedToken []byte, root *ed25519.PublicKey) ([]byte, error) 
 	}
 
 	rng := rand.Reader
-	token2, err := token.Append(rng, blockBuilder.Build())
+	token2, err := token.AppendBlock(rng, blockBuilder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to append: %v", err)
 	}
@@ -111,7 +116,7 @@ func Seal(b *biscuit.Biscuit, rng io.Reader) (*biscuit.Biscuit, error) {
 func Query(authorizer biscuit.Authorizer) (biscuit.FactSet, error) {
 	rule, err := parser.FromStringRule(`data($name, $id) <- user($name, $id`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse check: %v", err)
+		return biscuit.FactSet{}, fmt.Errorf("failed to parse check: %v", err)
 	}
 
 	return authorizer.Query(rule)

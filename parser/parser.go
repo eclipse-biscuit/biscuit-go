@@ -17,18 +17,18 @@ var (
 )
 
 var BiscuitLexerRules = []lexer.SimpleRule{
-	{Name: "Keyword", Pattern: `check if|allow if|deny if`},
+	{Name: "Keyword", Pattern: `\b((check|allow|deny|reject) if|check all|trusting|authority|previous)\b`},
+	{Name: "PublicKey", Pattern: `(ed25519|secp256r1)/[0-9a-fA-F]+`},
 	{Name: "Function", Pattern: `prefix|suffix|matches|length|contains`},
 	{Name: "Hex", Pattern: `hex:([0-9a-fA-F]{2})*`},
 	{Name: "Dot", Pattern: `\.`},
 	{Name: "Arrow", Pattern: `<-`},
 	{Name: "Or", Pattern: `\|\|`},
 	{Name: "And", Pattern: `&&`},
-	{Name: "Operator", Pattern: `==|>=|<=|>|<|\+|-|\*`},
 	{Name: "Comment", Pattern: `//[^\n]*`},
+	{Name: "Operator", Pattern: `===|/|>=|<=|>|<|\+|-|\*`},
 	{Name: "String", Pattern: `\"[^\"]*\"`},
 	{Name: "Variable", Pattern: `\$[a-zA-Z0-9_:]+`},
-	{Name: "Parameter", Pattern: `\{[a-zA-Z0-9_:]+\}`},
 	{Name: "DateTime", Pattern: `\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|([-+]\d\d:\d\d))?`},
 	{Name: "Int", Pattern: `[0-9]+`},
 	{Name: "Bool", Pattern: `true|false`},
@@ -133,19 +133,12 @@ func (p *parser) Check(check string, parameters ParametersMap) (biscuit.Check, e
 		return biscuit.Check{}, err
 	}
 
-	queries := make([]biscuit.Rule, len(parsed.Queries))
-	for i, q := range parsed.Queries {
-		query, err := q.ToBiscuit(parameters)
-		if err != nil {
-			return biscuit.Check{}, err
-		}
-
-		queries[i] = *query
+	c, err := parsed.ToBiscuit(parameters)
+	if err != nil {
+		return biscuit.Check{}, err
 	}
 
-	return biscuit.Check{
-		Queries: queries,
-	}, nil
+	return *c, nil
 }
 
 func (p *parser) Policy(policy string, parameters ParametersMap) (biscuit.Policy, error) {

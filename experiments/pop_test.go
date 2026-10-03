@@ -209,7 +209,7 @@ func clientSign(t *testing.T, rootPubkey sig.PublicKey, pubkey ed25519.PublicKey
 	}
 
 	// Add the signature to the token
-	builder := token.CreateBlock()
+	builder := token.SignRequest()
 
 	err = builder.AddFact(biscuit.Fact{Predicate: biscuit.Predicate{
 		Name: "signature",

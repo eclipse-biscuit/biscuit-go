@@ -11,18 +11,72 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func protoPublicKeyToTokenPublicKey(pubKey *pb.PublicKey) (*datalog.PublicKey, error) {
+	if pubKey == nil {
+		return nil, ErrNilPublicKey
+	}
+	result := datalog.PublicKey{
+		Algorithm: pubKey.GetAlgorithm(),
+		Key:       pubKey.GetKey(),
+	}
+	return &result, nil
+}
+
+func tokenPublicKeyToProtoPublicKey(pubKey *datalog.PublicKey) (*pb.PublicKey, error) {
+	if pubKey == nil {
+		return nil, ErrNilPublicKey
+	}
+
+	result := pb.PublicKey{
+		Algorithm: &pubKey.Algorithm,
+		Key:       pubKey.Key,
+	}
+
+	return &result, nil
+}
+
+func tokenExternalSignatureToProtoExternalSignature(extSig *ExternalSignature) (*pb.ExternalSignature, error) {
+	if extSig == nil {
+		return nil, ErrNilExternalSignature
+	}
+	protoPubKey, err := tokenPublicKeyToProtoPublicKey(&extSig.publicKey)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.ExternalSignature{
+		Signature: extSig.signature,
+		PublicKey: protoPubKey,
+	}, nil
+}
+
+func protoExternalSignatureToTokenExternalSignature(protoExtSig *pb.ExternalSignature) (*ExternalSignature, error) {
+	if protoExtSig == nil {
+		return nil, ErrNilExternalSignature
+	}
+
+	tokenPublicKey, err := protoPublicKeyToTokenPublicKey(protoExtSig.GetPublicKey())
+	if err != nil {
+		return nil, err
+	}
+
+	return &ExternalSignature{
+		publicKey: *tokenPublicKey,
+		signature: protoExtSig.GetSignature(),
+	}, nil
+}
+
 func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 	out := &pb.Block{
 		Symbols: *input.symbols,
 		Context: proto.String(input.context),
-		Version: proto.Uint32(input.version),
+		Version: proto.Uint32(uint32(input.version)),
 	}
 
 	facts := input.facts
 	if facts != nil {
-		out.FactsV2 = make([]*pb.FactV2, len(*facts))
+		out.FactsV2 = make([]*pb.FactV2, len(facts))
 		var err error
-		for i, fact := range *facts {
+		for i, fact := range facts {
 			out.FactsV2[i], err = tokenFactToProtoFactV2(fact)
 			if err != nil {
 				return nil, err
@@ -40,12 +94,12 @@ func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 			}
 			out.RulesV2[i] = r
 		}
+
 	}
 
-	checks := input.checks
-	if checks != nil {
-		out.ChecksV2 = make([]*pb.CheckV2, len(checks))
-		for i, check := range checks {
+	if input.checks != nil {
+		out.ChecksV2 = make([]*pb.CheckV2, len(input.checks))
+		for i, check := range input.checks {
 			c, err := tokenCheckToProtoCheckV2(check)
 			if err != nil {
 				return nil, err
@@ -54,51 +108,77 @@ func tokenBlockToProtoBlock(input *Block) (*pb.Block, error) {
 		}
 	}
 
+	if input.scopes != nil && len(input.scopes) > 0 {
+		out.Scope = make([]*pb.Scope, len(input.scopes))
+		for i, scope := range input.scopes {
+			s, err := tokenScopeToProtoScope(&scope)
+			if err != nil {
+				return nil, err
+			}
+			out.Scope[i] = s
+		}
+	}
+
+	if input.publicKeys != nil && len(*input.publicKeys) > 0 {
+		out.PublicKeys = make([]*pb.PublicKey, len(*input.publicKeys))
+		for i, pubKey := range *input.publicKeys {
+			out.PublicKeys[i] = &pb.PublicKey{
+				Algorithm: &pubKey.Algorithm,
+				Key:       pubKey.Key,
+			}
+		}
+	}
+
 	return out, nil
 }
 
-func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
+func protoBlockToTokenBlock(input *pb.Block, pbExternalSignature *pb.ExternalSignature) (*Block, error) {
 	symbols := datalog.SymbolTable(input.Symbols)
 
-	var facts datalog.FactSet
+	var publicKeys *datalog.PublicKeyTable
+	var facts []datalog.Fact
 	var rules []datalog.Rule
 	var checks []datalog.Check
+	var scopes []datalog.Scope
+	var externalSignature *ExternalSignature
 
-	if input.GetVersion() < MinSchemaVersion {
-		return nil, fmt.Errorf(
-			"biscuit: failed to convert proto block to token block: block version: %d < library version %d",
-			input.GetVersion(),
-			MinSchemaVersion,
-		)
-	}
-	if input.GetVersion() > MaxSchemaVersion {
-		return nil, fmt.Errorf(
-			"biscuit: failed to convert proto block to token block: block version: %d > library version %d",
-			input.GetVersion(),
-			MaxSchemaVersion,
-		)
+	datalogVersion, err := getDatalogVersion(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing block's version: %w", err)
 	}
 
-	switch input.GetVersion() {
-	case 3:
-		facts = make(datalog.FactSet, len(input.FactsV2))
+	switch datalogVersion {
+	case DatalogVersion3_0, DatalogVersion3_1, DatalogVersion3_2, DatalogVersion3_3:
+		facts = make([]datalog.Fact, len(input.FactsV2))
 		rules = make([]datalog.Rule, len(input.RulesV2))
 		checks = make([]datalog.Check, len(input.ChecksV2))
 
+		if input.PublicKeys != nil && len(input.PublicKeys) > 0 {
+			pkTable := make(datalog.PublicKeyTable, 0, len(input.PublicKeys))
+			for _, pubKey := range input.PublicKeys {
+				pk, err := protoPublicKeyToTokenPublicKey(pubKey)
+				if err != nil {
+					return nil, err
+				}
+				_ = pkTable.Insert(*pk)
+			}
+			publicKeys = &pkTable
+		}
+
 		for i, pbFact := range input.FactsV2 {
-			f, err := protoFactToTokenFactV2(pbFact)
+			dlFact, err := protoFactToTokenFactV2(pbFact)
 			if err != nil {
 				return nil, err
 			}
-			facts[i] = *f
+			facts[i] = *dlFact
 		}
 
 		for i, pbRule := range input.RulesV2 {
-			r, err := protoRuleToTokenRuleV2(pbRule)
+			dlRule, err := protoRuleToTokenRuleV2(pbRule)
 			if err != nil {
 				return nil, err
 			}
-			rules[i] = *r
+			rules[i] = *dlRule
 		}
 
 		for i, pbCheck := range input.ChecksV2 {
@@ -108,17 +188,39 @@ func protoBlockToTokenBlock(input *pb.Block) (*Block, error) {
 			}
 			checks[i] = *c
 		}
+
+		if input.Scope != nil && len(input.Scope) > 0 {
+			scopes = make([]datalog.Scope, len(input.Scope))
+			for i, pbScope := range input.Scope {
+				s, err := protoScopeToTokenScope(pbScope)
+				if err != nil {
+					return nil, err
+				}
+				scopes[i] = *s
+			}
+		}
+
+		if pbExternalSignature != nil {
+			externalSignature, err = protoExternalSignatureToTokenExternalSignature(pbExternalSignature)
+			if err != nil {
+				return nil, fmt.Errorf("biscuit: failed parsing block's external signature: %w", err)
+			}
+		}
+
 	default:
-		return nil, fmt.Errorf("biscuit: failed to convert proto block to token block: unsupported version: %d", input.GetVersion())
+		return nil, fmt.Errorf("biscuit: failed to convert proto block to token block: unsupported version: %d", datalogVersion)
 	}
 
 	return &Block{
-		symbols: &symbols,
-		facts:   &facts,
-		rules:   rules,
-		checks:  checks,
-		context: input.GetContext(),
-		version: input.GetVersion(),
+		symbols:           &symbols,
+		publicKeys:        publicKeys,
+		facts:             facts,
+		rules:             rules,
+		checks:            checks,
+		scopes:            scopes,
+		context:           input.GetContext(),
+		version:           datalogVersion,
+		externalSignature: externalSignature,
 	}, nil
 }
 
