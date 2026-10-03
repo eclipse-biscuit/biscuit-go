@@ -534,7 +534,7 @@ func TestBiscuitBytesSetEquality(t *testing.T) {
 
 	builder := NewBuilder(privateRoot)
 	builder.AddAuthorityFact(Fact{
-		Predicate: Predicate{Name: "keys", IDs: []Term{Set{Bytes{0x01}, Bytes{0x02}}}},
+		Predicate: Predicate{Name: "keys", IDs: []Term{NewSet(Bytes{0x01}, Bytes{0x02})}},
 	})
 	builder.AddAuthorityCheck(Check{Queries: []Rule{
 		{
@@ -543,7 +543,7 @@ func TestBiscuitBytesSetEquality(t *testing.T) {
 			Expressions: []Expression{
 				{
 					Value{Variable("k")},
-					Value{Set{Bytes{0x02}, Bytes{0x01}}},
+					Value{NewSet(Bytes{0x02}, Bytes{0x01})},
 					BinaryEqual,
 				},
 			},
@@ -558,9 +558,11 @@ func TestBiscuitBytesSetEquality(t *testing.T) {
 	deser, err := Unmarshal(ser)
 	require.NoError(t, err)
 
-	v, err := deser.AuthorizerFor(WithSingularRootPublicKey(publicRoot))
+	ab, err := deser.AuthorizerFor(WithSingularRootPublicKey(publicRoot))
 	require.NoError(t, err)
-	v.AddPolicy(DefaultAllowPolicy)
+	ab.AddPolicy(DefaultAllowPolicy)
+	v, err := ab.Build()
+	require.NoError(t, err)
 	require.NoError(t, v.Authorize())
 }
 

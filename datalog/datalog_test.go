@@ -6,6 +6,7 @@ package datalog
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -807,26 +808,26 @@ func TestSetEqual(t *testing.T) {
 		},
 		{
 			desc:  "equal with bytes elements",
-			s1:    Set{Bytes{0x01}, Bytes{0x02}},
-			s2:    Set{Bytes{0x02}, Bytes{0x01}},
+			s1:    NewSet(Bytes{0x01}, Bytes{0x02}),
+			s2:    NewSet(Bytes{0x02}, Bytes{0x01}),
 			equal: true,
 		},
 		{
 			desc:  "not equal with different bytes elements",
-			s1:    Set{Bytes{0x01}, Bytes{0x02}},
-			s2:    Set{Bytes{0x01}, Bytes{0x03}},
+			s1:    NewSet(Bytes{0x01}, Bytes{0x02}),
+			s2:    NewSet(Bytes{0x01}, Bytes{0x03}),
 			equal: false,
 		},
 		{
 			desc:  "not equal when one side has a duplicate hiding a missing element",
-			s1:    Set{Integer(1), Integer(1)},
-			s2:    Set{Integer(1), Integer(2)},
+			s1:    NewSet(Integer(1), Integer(1)),
+			s2:    NewSet(Integer(1), Integer(2)),
 			equal: false,
 		},
 		{
 			desc:  "not equal when the other side has the duplicate",
-			s1:    Set{Integer(1), Integer(2)},
-			s2:    Set{Integer(1), Integer(1)},
+			s1:    NewSet(Integer(1), Integer(2)),
+			s2:    NewSet(Integer(1), Integer(1)),
 			equal: false,
 		},
 	}
@@ -843,11 +844,11 @@ func TestSetEqual(t *testing.T) {
 }
 
 func TestSetIntersectUnionBytes(t *testing.T) {
-	s1 := Set{Bytes{0x01}, Bytes{0x02}}
-	s2 := Set{Bytes{0x02}, Bytes{0x03}}
+	s1 := NewSet(Bytes{0x01}, Bytes{0x02})
+	s2 := NewSet(Bytes{0x02}, Bytes{0x03})
 
-	require.True(t, Set{Bytes{0x02}}.Equal(s1.Intersect(s2)))
-	require.True(t, Set{Bytes{0x01}, Bytes{0x02}, Bytes{0x03}}.Equal(s1.Union(s2)))
+	require.True(t, NewSet(Bytes{0x02}).Equal(s1.Intersect(s2)))
+	require.True(t, NewSet(Bytes{0x01}, Bytes{0x02}, Bytes{0x03}).Equal(s1.Union(s2)))
 }
 
 // One value per concrete Term type. Equal must be reflexive, symmetric and
@@ -860,7 +861,7 @@ func TestTermEqualContract(t *testing.T) {
 		Date(1),
 		Bytes{0x01},
 		Bool(true),
-		Set{Integer(1)},
+		NewSet(Integer(1)),
 	}
 
 	for i, a := range terms {
@@ -879,29 +880,30 @@ func TestWorldFactsWithBytesSets(t *testing.T) {
 	syms := &SymbolTable{}
 	keys := syms.Insert("keys")
 	first := syms.Insert("first")
+	origin := *NewOrigin(0)
 
-	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}})
-	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x02}, Bytes{0x01}}}}})
-	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x03}}}}})
-	require.Len(t, *w.Facts(), 2)
+	w.AddFact(origin, fact(Predicate{keys, []Term{NewSet(Bytes{0x01}, Bytes{0x02})}}))
+	w.AddFact(origin, fact(Predicate{keys, []Term{NewSet(Bytes{0x02}, Bytes{0x01})}}))
+	w.AddFact(origin, fact(Predicate{keys, []Term{NewSet(Bytes{0x03})}}))
+	require.EqualValues(t, 2, w.Facts.Count())
 
-	w.AddRule(Rule{
+	w.AddRule(*NewTrustedOrigin().With(0), 0, Rule{
 		Head: Predicate{first, []Term{Variable(0)}},
 		Body: []Predicate{{keys, []Term{Variable(0)}}},
 		Expressions: []Expression{{
 			Value{Variable(0)},
-			Value{Set{Bytes{0x01}, Bytes{0x02}}},
+			Value{NewSet(Bytes{0x01}, Bytes{0x02})},
 			BinaryOp{Equal{}},
 		}},
 	})
 	require.NoError(t, w.Run(syms))
 
-	expected := &FactSet{
-		{Predicate{keys, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}},
-		{Predicate{keys, []Term{Set{Bytes{0x03}}}}},
-		{Predicate{first, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}},
-	}
-	require.True(t, expected.Equal(w.Facts()), "have: %v", SymbolDebugger{syms}.FactSet(w.Facts()))
+	expected := NewFactSet(origin,
+		fact(Predicate{keys, []Term{NewSet(Bytes{0x01}, Bytes{0x02})}}),
+		fact(Predicate{keys, []Term{NewSet(Bytes{0x03})}}),
+		fact(Predicate{first, []Term{NewSet(Bytes{0x01}, Bytes{0x02})}}),
+	)
+	require.True(t, expected.Equal(&w.Facts), "have: %v", SymbolDebugger{SymbolTable: syms}.FactSet(w.Facts))
 }
 
 // Query used to compare terms with ==, which panics on slice-backed terms.
@@ -910,22 +912,23 @@ func TestWorldQueryBytesAndSetTerms(t *testing.T) {
 	syms := &SymbolTable{}
 	key := syms.Insert("key")
 	keys := syms.Insert("keys")
+	origin := *NewOrigin(0)
 
-	w.AddFact(Fact{Predicate{key, []Term{Bytes{0x01}}}})
-	w.AddFact(Fact{Predicate{key, []Term{Bytes{0x02}}}})
-	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}})
+	w.AddFact(origin, fact(Predicate{key, []Term{Bytes{0x01}}}))
+	w.AddFact(origin, fact(Predicate{key, []Term{Bytes{0x02}}}))
+	w.AddFact(origin, fact(Predicate{keys, []Term{NewSet(Bytes{0x01}, Bytes{0x02})}}))
 
 	res := w.Query(Predicate{key, []Term{Bytes{0x01}}})
-	require.True(t, (&FactSet{{Predicate{key, []Term{Bytes{0x01}}}}}).Equal(res))
+	require.True(t, NewFactSet(origin, fact(Predicate{key, []Term{Bytes{0x01}}})).Equal(res))
 
 	res = w.Query(Predicate{key, []Term{Bytes{0x03}}})
-	require.Empty(t, *res)
+	require.EqualValues(t, 0, res.Count())
 
-	res = w.Query(Predicate{keys, []Term{Set{Bytes{0x02}, Bytes{0x01}}}})
-	require.Len(t, *res, 1)
+	res = w.Query(Predicate{keys, []Term{NewSet(Bytes{0x02}, Bytes{0x01})}})
+	require.EqualValues(t, 1, res.Count())
 
 	res = w.Query(Predicate{key, []Term{Variable(0)}})
-	require.Len(t, *res, 2)
+	require.EqualValues(t, 2, res.Count())
 }
 
 func TestWorldRunLimits(t *testing.T) {

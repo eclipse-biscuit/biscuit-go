@@ -43,6 +43,17 @@ type Term interface {
 	fmt.Stringer
 }
 
+// Keep the value types implementing Term; a pointer receiver on any of them would break Equal.
+var (
+	_ Term = Variable(0)
+	_ Term = Integer(0)
+	_ Term = String(0)
+	_ Term = Date(0)
+	_ Term = Bytes(nil)
+	_ Term = Bool(false)
+	_ Term = Set{}
+)
+
 // Set is a Term that contains other Terms, as a set.
 type Set struct {
 	*set.HashSet[Term]
@@ -107,8 +118,6 @@ func (s Set) String() string {
 	return fmt.Sprintf("{%s}", strings.Join(strSlice, ", "))
 }
 
-var _ Term = (*Set)(nil)
-
 type Variable uint32
 
 func (Variable) Type() TermType { return TermTypeVariable }
@@ -139,8 +148,6 @@ func (v Variable) Equal(t Term) bool {
 func (v Variable) String() string {
 	return fmt.Sprintf("$%d", v)
 }
-
-var _ Term = (*Variable)(nil)
 
 type Integer int64
 
@@ -173,8 +180,6 @@ func (i Integer) String() string {
 	return fmt.Sprintf("%d", i)
 }
 
-var _ Term = (*Integer)(nil)
-
 type String uint64
 
 func (String) Type() TermType { return TermTypeString }
@@ -205,8 +210,6 @@ func (s String) Equal(t Term) bool {
 func (s String) String() string {
 	return fmt.Sprintf("#%d", s)
 }
-
-var _ Term = (*String)(nil)
 
 type Date uint64
 
@@ -239,8 +242,6 @@ func (d Date) String() string {
 	return time.Unix(int64(d), 0).UTC().Format(time.RFC3339)
 }
 
-var _ Term = (*Date)(nil)
-
 type Bytes []byte
 
 func (Bytes) Type() TermType { return TermTypeBytes }
@@ -272,8 +273,6 @@ func (b Bytes) String() string {
 	return fmt.Sprintf("hex:%s", hex.EncodeToString(b))
 }
 
-var _ Term = (*Bytes)(nil)
-
 type Bool bool
 
 func (Bool) Type() TermType { return TermTypeBool }
@@ -304,8 +303,6 @@ func (b Bool) Equal(t Term) bool {
 func (b Bool) String() string {
 	return fmt.Sprintf("%t", b)
 }
-
-var _ Term = (*Bool)(nil)
 
 type Predicate struct {
 	Name  String
@@ -1076,12 +1073,9 @@ func (w *World) Query(pred Predicate) *FactSet {
 				fID := fact.Predicate.Terms[i]
 				pID := pred.Terms[i]
 
-				if pID.Type() != TermTypeVariable {
-					if fID.Type() != pID.Type() || fID != pID {
-						matches = false
-						break
-					}
-
+				if pID.Type() != TermTypeVariable && !fID.Equal(pID) {
+					matches = false
+					break
 				}
 			}
 

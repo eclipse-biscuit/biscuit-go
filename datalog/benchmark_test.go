@@ -41,15 +41,18 @@ func BenchmarkWorldRunTransitiveClosure(b *testing.B) {
 				},
 			}
 
+			origin := *NewOrigin(0)
+			trusted := *NewTrustedOrigin().With(0)
+
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				w := benchWorld()
 				for _, f := range facts {
-					w.AddFact(f)
+					w.AddFact(origin, f)
 				}
 				for _, r := range rules {
-					w.AddRule(r)
+					w.AddRule(trusted, 0, r)
 				}
 				if err := w.Run(syms); err != nil {
 					b.Fatal(err)
@@ -59,7 +62,7 @@ func BenchmarkWorldRunTransitiveClosure(b *testing.B) {
 	}
 }
 
-// Inserting n distinct facts; FactSet.Insert scans for duplicates on each insert.
+// Inserting n distinct facts; FactSet.Insert checks for duplicates on each insert.
 func BenchmarkWorldAddFact(b *testing.B) {
 	for _, n := range []int{100, 1000} {
 		b.Run(fmt.Sprintf("facts=%d", n), func(b *testing.B) {
@@ -71,12 +74,14 @@ func BenchmarkWorldAddFact(b *testing.B) {
 				facts[i] = Fact{Predicate{right, []Term{syms.Insert(fmt.Sprintf("/file%d", i)), read}}}
 			}
 
+			origin := *NewOrigin(0)
+
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				w := benchWorld()
 				for _, f := range facts {
-					w.AddFact(f)
+					w.AddFact(origin, f)
 				}
 			}
 		})
@@ -94,12 +99,14 @@ func BenchmarkWorldQueryRule(b *testing.B) {
 			check := syms.Insert("check")
 			read := syms.Insert("read")
 
+			origin := *NewOrigin(0)
+			trusted := *NewTrustedOrigin().With(0)
 			w := benchWorld()
 			for i := 0; i < n; i++ {
-				w.AddFact(Fact{Predicate{right, []Term{syms.Insert(fmt.Sprintf("/file%d", i)), read}}})
+				w.AddFact(origin, Fact{Predicate{right, []Term{syms.Insert(fmt.Sprintf("/file%d", i)), read}}})
 			}
-			w.AddFact(Fact{Predicate{resource, []Term{syms.Insert(fmt.Sprintf("/file%d", n-1))}}})
-			w.AddFact(Fact{Predicate{operation, []Term{read}}})
+			w.AddFact(origin, Fact{Predicate{resource, []Term{syms.Insert(fmt.Sprintf("/file%d", n-1))}}})
+			w.AddFact(origin, Fact{Predicate{operation, []Term{read}}})
 
 			query := Rule{
 				Head: Predicate{check, []Term{Variable(0)}},
@@ -113,8 +120,12 @@ func BenchmarkWorldQueryRule(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if res := w.QueryRule(query, syms); len(*res) != 1 {
-					b.Fatalf("got %d results, want 1", len(*res))
+				res, err := w.QueryRule(query, trusted, syms)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if res.Count() != 1 {
+					b.Fatalf("got %d results, want 1", res.Count())
 				}
 			}
 		})
@@ -123,27 +134,27 @@ func BenchmarkWorldQueryRule(b *testing.B) {
 
 func BenchmarkSetEqual(b *testing.B) {
 	const n = 10
-	strs := make(Set, n)
-	byts := make(Set, n)
+	strs := make([]Term, n)
+	byts := make([]Term, n)
 	for i := 0; i < n; i++ {
 		strs[i] = String(i)
 		byts[i] = Bytes{byte(i), byte(i >> 8)}
 	}
-	// Reversed copies so no element sits at the same index in both sets.
-	reversed := func(s Set) Set {
-		r := make(Set, len(s))
+	// Reversed copies so the two sets are built in different insertion order.
+	reversed := func(s []Term) Set {
+		r := make([]Term, len(s))
 		for i := range s {
 			r[len(s)-1-i] = s[i]
 		}
-		return r
+		return NewSet(r...)
 	}
 
 	cases := []struct {
 		name string
 		a, b Set
 	}{
-		{"strings", strs, reversed(strs)},
-		{"bytes", byts, reversed(byts)},
+		{"strings", NewSet(strs...), reversed(strs)},
+		{"bytes", NewSet(byts...), reversed(byts)},
 	}
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
