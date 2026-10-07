@@ -1,9 +1,12 @@
+version: "2"
+
 linters:
   disable:
-    - errcheck # TODO: ignore hmac Write error and enable this
-
-
-linters-settings:
-  govet:
-    disable:
-      - structtag
+    # TODO: many builder/authorizer call sites drop returned errors; enable
+    # once they are fixed.
+    - errcheck
+  settings:
+    govet:
+      disable:
+        # participle grammar tags are not key:"value" pairs, see parser/grammar.go
+        - structtag
