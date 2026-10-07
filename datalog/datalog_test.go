@@ -6,6 +6,7 @@ package datalog
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"reflect"
 	"testing"
 	"time"
 
@@ -473,6 +474,30 @@ func TestSetEqual(t *testing.T) {
 			s2:    Set{syms.Insert("a"), syms.Insert("b"), syms.Insert("d")},
 			equal: false,
 		},
+		{
+			desc:  "equal with bytes elements",
+			s1:    Set{Bytes{0x01}, Bytes{0x02}},
+			s2:    Set{Bytes{0x02}, Bytes{0x01}},
+			equal: true,
+		},
+		{
+			desc:  "not equal with different bytes elements",
+			s1:    Set{Bytes{0x01}, Bytes{0x02}},
+			s2:    Set{Bytes{0x01}, Bytes{0x03}},
+			equal: false,
+		},
+		{
+			desc:  "not equal when one side has a duplicate hiding a missing element",
+			s1:    Set{Integer(1), Integer(1)},
+			s2:    Set{Integer(1), Integer(2)},
+			equal: false,
+		},
+		{
+			desc:  "not equal when the other side has the duplicate",
+			s1:    Set{Integer(1), Integer(2)},
+			s2:    Set{Integer(1), Integer(1)},
+			equal: false,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -480,6 +505,92 @@ func TestSetEqual(t *testing.T) {
 			require.Equal(t, testCase.equal, testCase.s1.Equal(testCase.s2))
 		})
 	}
+}
+
+func TestSetIntersectUnionBytes(t *testing.T) {
+	s1 := Set{Bytes{0x01}, Bytes{0x02}}
+	s2 := Set{Bytes{0x02}, Bytes{0x03}}
+
+	require.True(t, Set{Bytes{0x02}}.Equal(s1.Intersect(s2)))
+	require.True(t, Set{Bytes{0x01}, Bytes{0x02}, Bytes{0x03}}.Equal(s1.Union(s2)))
+}
+
+// One value per concrete Term type. Equal must be reflexive, symmetric and
+// false across types, and every implementation must be a value type.
+func TestTermEqualContract(t *testing.T) {
+	terms := []Term{
+		Variable(1),
+		Integer(1),
+		String(1),
+		Date(1),
+		Bytes{0x01},
+		Bool(true),
+		Set{Integer(1)},
+	}
+
+	for i, a := range terms {
+		require.NotEqual(t, reflect.Pointer, reflect.TypeOf(a).Kind(), "%T must be a value type", a)
+		for j, b := range terms {
+			require.Equal(t, i == j, a.Equal(b), "%v.Equal(%v)", a, b)
+			require.Equal(t, i == j, b.Equal(a), "%v.Equal(%v)", b, a)
+		}
+	}
+}
+
+// Adding a fact compares it to the existing ones with Set.Equal.
+// This used to panic when the set held byte arrays.
+func TestWorldFactsWithBytesSets(t *testing.T) {
+	w := NewWorld()
+	syms := &SymbolTable{}
+	keys := syms.Insert("keys")
+	first := syms.Insert("first")
+
+	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}})
+	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x02}, Bytes{0x01}}}}})
+	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x03}}}}})
+	require.Len(t, *w.Facts(), 2)
+
+	w.AddRule(Rule{
+		Head: Predicate{first, []Term{Variable(0)}},
+		Body: []Predicate{{keys, []Term{Variable(0)}}},
+		Expressions: []Expression{{
+			Value{Variable(0)},
+			Value{Set{Bytes{0x01}, Bytes{0x02}}},
+			BinaryOp{Equal{}},
+		}},
+	})
+	require.NoError(t, w.Run(syms))
+
+	expected := &FactSet{
+		{Predicate{keys, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}},
+		{Predicate{keys, []Term{Set{Bytes{0x03}}}}},
+		{Predicate{first, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}},
+	}
+	require.True(t, expected.Equal(w.Facts()), "have: %v", SymbolDebugger{syms}.FactSet(w.Facts()))
+}
+
+// Query used to compare terms with ==, which panics on slice-backed terms.
+func TestWorldQueryBytesAndSetTerms(t *testing.T) {
+	w := NewWorld()
+	syms := &SymbolTable{}
+	key := syms.Insert("key")
+	keys := syms.Insert("keys")
+
+	w.AddFact(Fact{Predicate{key, []Term{Bytes{0x01}}}})
+	w.AddFact(Fact{Predicate{key, []Term{Bytes{0x02}}}})
+	w.AddFact(Fact{Predicate{keys, []Term{Set{Bytes{0x01}, Bytes{0x02}}}}})
+
+	res := w.Query(Predicate{key, []Term{Bytes{0x01}}})
+	require.True(t, (&FactSet{{Predicate{key, []Term{Bytes{0x01}}}}}).Equal(res))
+
+	res = w.Query(Predicate{key, []Term{Bytes{0x03}}})
+	require.Empty(t, *res)
+
+	res = w.Query(Predicate{keys, []Term{Set{Bytes{0x02}, Bytes{0x01}}}})
+	require.Len(t, *res, 1)
+
+	res = w.Query(Predicate{key, []Term{Variable(0)}})
+	require.Len(t, *res, 2)
 }
 
 func TestWorldRunLimits(t *testing.T) {

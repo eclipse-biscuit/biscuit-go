@@ -26,28 +26,55 @@ const (
 	TermTypeSet
 )
 
+// Term is a value in a predicate. Implementations are value types and
+// Equal compares by value, using a type assertion on the concrete type.
+// Do not store a pointer to a term (such as *Bytes) in a Term: the
+// pointer would still satisfy the interface, but Equal would not match it.
 type Term interface {
 	Type() TermType
 	Equal(Term) bool
 	String() string
 }
 
+// Keep the value types implementing Term; a pointer receiver on any of them would break Equal.
+var (
+	_ Term = Variable(0)
+	_ Term = Integer(0)
+	_ Term = String(0)
+	_ Term = Date(0)
+	_ Term = Bytes(nil)
+	_ Term = Bool(false)
+	_ Term = Set(nil)
+)
+
 type Set []Term
 
 func (Set) Type() TermType { return TermTypeSet }
+
+// Bytes is a slice and cannot be a map key, so look up elements with Equal.
+func (s Set) contains(t Term) bool {
+	for _, e := range s {
+		if e.Equal(t) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s Set) Equal(t Term) bool {
 	c, ok := t.(Set)
 	if !ok || len(c) != len(s) {
 		return false
 	}
 
-	cmap := make(map[Term]struct{}, len(c))
-	for _, v := range c {
-		cmap[v] = struct{}{}
+	// Both directions: a duplicate on one side could otherwise hide a missing element.
+	for _, e := range s {
+		if !c.contains(e) {
+			return false
+		}
 	}
-
-	for _, id := range s {
-		if _, ok := cmap[id]; !ok {
+	for _, e := range c {
+		if !s.contains(e) {
 			return false
 		}
 	}
@@ -62,32 +89,22 @@ func (s Set) String() string {
 	return fmt.Sprintf("[%s]", strings.Join(eltStr, ", "))
 }
 func (s Set) Intersect(t Set) Set {
-	other := make(map[Term]struct{}, len(t))
-	for _, v := range t {
-		other[v] = struct{}{}
-	}
-
 	result := Set{}
 
-	for _, id := range s {
-		if _, ok := other[id]; ok {
-			result = append(result, id)
+	for _, e := range s {
+		if t.contains(e) {
+			result = append(result, e)
 		}
 	}
 	return result
 }
 func (s Set) Union(t Set) Set {
-	this := make(map[Term]struct{}, len(s))
-	for _, v := range s {
-		this[v] = struct{}{}
-	}
-
 	result := Set{}
 	result = append(result, s...)
 
-	for _, id := range t {
-		if _, ok := this[id]; !ok {
-			result = append(result, id)
+	for _, e := range t {
+		if !s.contains(e) {
+			result = append(result, e)
 		}
 	}
 
@@ -429,12 +446,9 @@ func (w *World) Query(pred Predicate) *FactSet {
 			fID := f.Terms[i]
 			pID := pred.Terms[i]
 
-			if pID.Type() != TermTypeVariable {
-				if fID.Type() != pID.Type() || fID != pID {
-					matches = false
-					break
-				}
-
+			if pID.Type() != TermTypeVariable && !fID.Equal(pID) {
+				matches = false
+				break
 			}
 		}
 
