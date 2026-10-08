@@ -1,6 +1,6 @@
 IMAGE ?= biscuit-go-test
 
-.PHONY: all build test test-local verify lint clean
+.PHONY: all build test test-local verify lint apidiff clean
 
 all: verify lint test
 
@@ -23,6 +23,9 @@ verify:
 # Downloads a pinned golangci-lint into build/bin on first use.
 lint:
 	./script/lint.sh
+
+apidiff:
+	./script/apidiff.sh -r main
 
 clean:
 	rm -rf build
