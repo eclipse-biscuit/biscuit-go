@@ -585,7 +585,6 @@ func combine(variables MatchedVariables, predicates []Predicate, expressions []E
 					for _, e := range expressions {
 						res, err := e.Evaluate(complete_vars, syms)
 						if err != nil {
-							fmt.Printf("expression error: %+v", err)
 							c <- struct {
 								MatchedVariables
 								error
