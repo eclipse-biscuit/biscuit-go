@@ -36,6 +36,7 @@ type Block struct {
 	PublicKeys  []any    `json:"public_keys"`
 	ExternalKey any      `json:"external_key"`
 	Code        string   `json:"code"`
+	Version     uint32   `json:"version"`
 }
 
 type Result struct {
@@ -69,42 +70,18 @@ type BiscuitError struct {
 type World struct {
 	Facts    []ScopedFact `json:"facts"`
 	Rules    []ScopedRule `json:"rules"`
-	Checks   []string     `json:"checks"`
+	Checks   []any        `json:"checks"`
 	Policies []string     `json:"policies"`
 }
 
 type ScopedFact struct {
-	Fact  string
-	Scope [](*int32)
-}
-
-func (sf *ScopedFact) UnmarshalJSON(buf []byte) error {
-	tmp := []interface{}{&sf.Fact, &sf.Scope}
-	wantLen := len(tmp)
-	if err := json.Unmarshal(buf, &tmp); err != nil {
-		return err
-	}
-	if g, e := len(tmp), wantLen; g != e {
-		return fmt.Errorf("wrong number of fields in ScopedFact: %d != %d", g, e)
-	}
-	return nil
+	Facts []string   `json:"facts"`
+	Scope [](*int32) `json:"origin"`
 }
 
 type ScopedRule struct {
-	Rule  string
-	Scope *int32
-}
-
-func (sr *ScopedRule) UnmarshalJSON(buf []byte) error {
-	tmp := []interface{}{&sr.Rule, &sr.Scope}
-	wantLen := len(tmp)
-	if err := json.Unmarshal(buf, &tmp); err != nil {
-		return err
-	}
-	if g, e := len(tmp), wantLen; g != e {
-		return fmt.Errorf("wrong number of fields in ScopedRule: %d != %d", g, e)
-	}
-	return nil
+	Rules []string `json:"rules"`
+	Scope *int32   `json:"origin"`
 }
 
 func (w World) String() string {
@@ -120,14 +97,14 @@ func (w World) String() string {
 		}
 
 		if visible {
-			facts = append(facts, f.Fact)
+			facts = append(facts, f.Facts...)
 		}
 	}
 	sort.Strings(facts)
 	rules := []string{}
 	for _, r := range w.Rules {
 		if r.Scope == nil || *r.Scope == 0 {
-			rules = append(rules, r.Rule)
+			rules = append(rules, r.Rules...)
 		}
 	}
 	sort.Strings(rules)
@@ -143,13 +120,16 @@ type Validation struct {
 }
 
 func CheckSample(root_key ed25519.PublicKey, c TestCase, t *testing.T) {
-	// all these contain v4 blocks, which are not supported yet
-	if c.Filename == "test024_third_party.bc" ||
-		c.Filename == "test025_check_all.bc" ||
-		c.Filename == "test026_public_keys_interning.bc" ||
-		c.Filename == "test027_integer_wraparound.bc" ||
-		c.Filename == "test028_expressions_v4.bc" {
+	// all these use features from v3.1+, which are not supported yet
+	if c.Filename == "test013_block_rules.bc" ||
+		c.Filename == "test017_expressions.bc" ||
+		c.Filename == "test036_secp256r1.bc" {
 		t.SkipNow()
+	}
+	for _, b := range c.Token {
+		if b.Version > biscuit.MaxSchemaVersion {
+			t.SkipNow()
+		}
 	}
 	fmt.Printf("Checking sample %s\n", c.Filename)
 	b, err := os.ReadFile("./data/current/" + c.Filename)
