@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func hashVar(s string) Variable {
@@ -665,6 +666,28 @@ func TestWorldRunLimits(t *testing.T) {
 
 		w.AddRule(r1)
 		require.Equal(t, tc.expectedErr, w.Run(syms))
+	}
+}
+
+func TestApplyInvalidRuleNoGoroutineLeak(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	syms := &SymbolTable{}
+	p := syms.Insert("p")
+	q := syms.Insert("q")
+
+	// $missing is absent from the body; two facts give combine a second match to send.
+	r := Rule{
+		Head: Predicate{p, []Term{hashVar("x"), hashVar("missing")}},
+		Body: []Predicate{{q, []Term{hashVar("x")}}},
+	}
+	facts := &FactSet{
+		{Predicate{q, []Term{Integer(1)}}},
+		{Predicate{q, []Term{Integer(2)}}},
+	}
+
+	for i := 0; i < 100; i++ {
+		err := r.Apply(facts, &FactSet{}, syms)
+		require.IsType(t, InvalidRuleError{}, err)
 	}
 }
 

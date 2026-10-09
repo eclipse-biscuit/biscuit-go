@@ -231,20 +231,19 @@ func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error 
 		}
 	}
 
-	combinations := combine(variables, r.Body, r.Expressions, facts, syms)
+	combinations, err := combine(variables, r.Body, r.Expressions, facts, syms)
+	if err != nil {
+		return err
+	}
 
-	for res := range combinations {
-		if res.error != nil {
-			return res.error
-		}
-
+	for _, res := range combinations {
 		predicate := r.Head.Clone()
 		for i, term := range predicate.Terms {
 			k, ok := term.(Variable)
 			if !ok {
 				continue
 			}
-			v, ok := res.MatchedVariables[k]
+			v, ok := res[k]
 			if !ok {
 				return InvalidRuleError{r, k}
 			}
@@ -480,130 +479,108 @@ func (m MatchedVariables) Clone() MatchedVariables {
 	return res
 }
 
-func combine(variables MatchedVariables, predicates []Predicate, expressions []Expression, facts *FactSet, syms *SymbolTable) <-chan struct {
-	MatchedVariables
-	error
-} {
-	c := make(chan struct {
-		MatchedVariables
-		error
-	})
+func combine(
+	variables MatchedVariables,
+	predicates []Predicate,
+	expressions []Expression,
+	facts *FactSet,
+	syms *SymbolTable,
+) ([]MatchedVariables, error) {
+	var res []MatchedVariables
 
-	go func(c chan struct {
-		MatchedVariables
-		error
-	}) {
-		defer close(c)
+	current := 0
+	indexes := make([]int, len(predicates))
 
-		current := 0
-		indexes := make([]int, len(predicates))
-		// fmt.Printf("combine variables %+v preds %+v exp %+v facts %+v indexes %+v\n", variables, predicates, expressions, *facts, indexes)
+	// cannot apply a rule on an empty list of facts
+	if len(predicates) > 0 && len(*facts) == 0 {
+		return nil, nil
+	}
 
-		// cannot apply a rule on an empty list of facts
-		if len(predicates) > 0 && len(*facts) == 0 {
-			return
-		}
-
-		// main loop
-		for {
-			if len(predicates) > 0 && len(*facts) > 0 {
-				// look for the next matching set of facts
-				// current indicates which predicate we are looking at, and indexes contains
-				// a list of indexes in the facts list, for each predicate
-				// when we are done looking at a set of facts, the last index is incremented
-				// and if that one reached the max number of facts, the previous one, etc
-				for {
-					if (*facts)[indexes[current]].Match(predicates[current]) {
-						if current == len(predicates)-1 {
-							// extract and check variables, check expressions, send variables
-							break
-						} else {
-							current += 1
-						}
+	// main loop
+	for {
+		if len(predicates) > 0 && len(*facts) > 0 {
+			// look for the next matching set of facts
+			// current indicates which predicate we are looking at, and indexes contains
+			// a list of indexes in the facts list, for each predicate
+			// when we are done looking at a set of facts, the last index is incremented
+			// and if that one reached the max number of facts, the previous one, etc
+			for {
+				if (*facts)[indexes[current]].Match(predicates[current]) {
+					if current == len(predicates)-1 {
+						// extract and check variables, check expressions, send variables
+						break
 					} else {
-						// did not match, we either increase the current index or the previous one
-						// then we check again for a match
-						if !advanceIndexes(&current, &indexes, facts) {
-							return
-						}
-					}
-				}
-			}
-
-			// extract and check variables, check expressions, send variables
-			var vars = variables.Clone()
-			var matching = true
-
-		match:
-			for i, pred := range predicates {
-				fact := (*facts)[indexes[i]]
-				// fmt.Printf("evaluating predicate(%d) %+v with fact %+v\n", i, pred, fact)
-
-				for j := 0; j < len(pred.Terms); j++ {
-					term := pred.Terms[j]
-					k, ok := term.(Variable)
-					if !ok {
-						continue
-					}
-					v := fact.Terms[j]
-					if !vars.Insert(k, v) {
-						matching = false
-						break match
-					}
-
-				}
-			}
-
-			// fmt.Printf("evaluating indexes %+v with extracted variables %+v, matching = %+v\n", indexes, variables, matching)
-			if matching {
-				if complete_vars := vars.Complete(); complete_vars != nil {
-					// fmt.Printf("variables are complete, evaluating expressions\n")
-					valid := true
-					for _, e := range expressions {
-						res, err := e.Evaluate(complete_vars, syms)
-						if err != nil {
-							c <- struct {
-								MatchedVariables
-								error
-							}{complete_vars, err}
-
-							return
-						}
-						if !res.Equal(Bool(true)) {
-							valid = false
-							break
-						}
-					}
-
-					if valid {
-						// fmt.Printf("sending valid variables %+v\n", complete_vars)
-						c <- struct {
-							MatchedVariables
-							error
-						}{complete_vars, nil}
+						current += 1
 					}
 				} else {
-					// if all predicates match but variables are not complete, it means
-					// variables appearing in the head do not appear in the body,
-					// so we should stop here because there's no way to get a correct match
-					return
+					// did not match, we either increase the current index or the previous one
+					// then we check again for a match
+					if !advanceIndexes(&current, &indexes, facts) {
+						return res, nil
+					}
 				}
-			}
-
-			// this was a rule or check with expressions but no predicates, no need to
-			// update the indexes, an single execution is enough
-			if len(predicates) == 0 {
-				return
-			}
-
-			// next index
-			if !advanceIndexes(&current, &indexes, facts) {
-				return
 			}
 		}
 
-	}(c)
-	return c
+		// extract and check variables, check expressions, send variables
+		var vars = variables.Clone()
+		var matching = true
+
+	match:
+		for i, pred := range predicates {
+			fact := (*facts)[indexes[i]]
+
+			for j := 0; j < len(pred.Terms); j++ {
+				term := pred.Terms[j]
+				k, ok := term.(Variable)
+				if !ok {
+					continue
+				}
+				v := fact.Terms[j]
+				if !vars.Insert(k, v) {
+					matching = false
+					break match
+				}
+
+			}
+		}
+
+		if matching {
+			if complete_vars := vars.Complete(); complete_vars != nil {
+				valid := true
+				for _, e := range expressions {
+					r, err := e.Evaluate(complete_vars, syms)
+					if err != nil {
+						return nil, err
+					}
+					if !r.Equal(Bool(true)) {
+						valid = false
+						break
+					}
+				}
+
+				if valid {
+					res = append(res, complete_vars)
+				}
+			} else {
+				// if all predicates match but variables are not complete, it means
+				// variables appearing in the head do not appear in the body,
+				// so we should stop here because there's no way to get a correct match
+				return res, nil
+			}
+		}
+
+		// this was a rule or check with expressions but no predicates, no need to
+		// update the indexes, an single execution is enough
+		if len(predicates) == 0 {
+			return res, nil
+		}
+
+		// next index
+		if !advanceIndexes(&current, &indexes, facts) {
+			return res, nil
+		}
+	}
 }
 
 func advanceIndexes(current *int, indexes *[]int, facts *FactSet) bool {
