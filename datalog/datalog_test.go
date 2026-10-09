@@ -667,3 +667,33 @@ func TestWorldRunLimits(t *testing.T) {
 		require.Equal(t, tc.expectedErr, w.Run(syms))
 	}
 }
+
+func TestWorldRunTimeoutMidRun(t *testing.T) {
+	syms := &SymbolTable{}
+	edge := syms.Insert("edge")
+	path := syms.Insert("path")
+
+	w := NewWorld(
+		WithMaxDuration(time.Millisecond),
+		WithMaxFacts(1<<20),
+		WithMaxIterations(1<<20),
+	)
+	for i := 0; i < 20; i++ {
+		w.AddFact(Fact{Predicate{edge, []Term{Integer(i), Integer(i + 1)}}})
+	}
+	w.AddRule(Rule{
+		Head: Predicate{path, []Term{Variable(0), Variable(1)}},
+		Body: []Predicate{{edge, []Term{Variable(0), Variable(1)}}},
+	})
+	w.AddRule(Rule{
+		Head: Predicate{path, []Term{Variable(0), Variable(2)}},
+		Body: []Predicate{
+			{path, []Term{Variable(0), Variable(1)}},
+			{edge, []Term{Variable(1), Variable(2)}},
+		},
+	})
+
+	require.ErrorIs(t, w.Run(syms), ErrWorldRunLimitTimeout)
+	// Exposes a race condition under -race if Run left a goroutine still writing facts.
+	_ = len(*w.Facts())
+}
