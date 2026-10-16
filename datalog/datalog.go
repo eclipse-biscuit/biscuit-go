@@ -219,6 +219,11 @@ func (e InvalidRuleError) Error() string {
 }
 
 func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error {
+	return r.apply(facts, newFacts, syms, time.Time{})
+}
+
+// apply returns ErrWorldRunLimitTimeout once deadline passes. A zero deadline disables the limit.
+func (r Rule) apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable, deadline time.Time) error {
 	// extract all variables from the rule body
 	variables := make(MatchedVariables)
 	for _, predicate := range r.Body {
@@ -231,7 +236,7 @@ func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error 
 		}
 	}
 
-	combinations, err := combine(variables, r.Body, r.Expressions, facts, syms)
+	combinations, err := combine(variables, r.Body, r.Expressions, facts, syms, deadline)
 	if err != nil {
 		return err
 	}
@@ -308,6 +313,9 @@ var defaultRunLimits = runLimits{
 	maxIterations: 100,
 	maxDuration:   2 * time.Millisecond,
 }
+
+// deadlineCheckInterval is the number of iteration between each time check in combine.
+const deadlineCheckInterval = 256
 
 var (
 	ErrWorldRunLimitMaxFacts      = errors.New("datalog: world runtime limit: too many facts")
@@ -387,7 +395,7 @@ func (w *World) Run(syms *SymbolTable) error {
 			if time.Now().After(deadline) {
 				return ErrWorldRunLimitTimeout
 			}
-			if err := r.Apply(w.facts, &newFacts, syms); err != nil {
+			if err := r.apply(w.facts, &newFacts, syms, deadline); err != nil {
 				return err
 			}
 		}
@@ -489,8 +497,17 @@ func combine(
 	expressions []Expression,
 	facts *FactSet,
 	syms *SymbolTable,
+	deadline time.Time,
 ) ([]MatchedVariables, error) {
 	var res []MatchedVariables
+
+	// A single rule can walk |facts|^|predicates| tuples, so the deadline is
+	// checked every deadlineCheckInterval steps rather than once per rule.
+	steps := 0
+	expired := func() bool {
+		steps++
+		return !deadline.IsZero() && steps%deadlineCheckInterval == 0 && time.Now().After(deadline)
+	}
 
 	current := 0
 	indexes := make([]int, len(predicates))
@@ -509,6 +526,9 @@ func combine(
 			// when we are done looking at a set of facts, the last index is incremented
 			// and if that one reached the max number of facts, the previous one, etc
 			for {
+				if expired() {
+					return nil, ErrWorldRunLimitTimeout
+				}
 				if (*facts)[indexes[current]].Match(predicates[current]) {
 					if current == len(predicates)-1 {
 						// extract and check variables, check expressions, send variables

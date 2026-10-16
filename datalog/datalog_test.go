@@ -733,3 +733,29 @@ func TestWorldRunTimeoutMidRun(t *testing.T) {
 	// Exposes a race condition under -race if Run left a goroutine still writing facts.
 	_ = len(*w.Facts())
 }
+
+func TestWorldRunTimeoutWithinRule(t *testing.T) {
+	syms := &SymbolTable{}
+	p := syms.Insert("p")
+	q := syms.Insert("q")
+	none := syms.Insert("none")
+
+	w := NewWorld(WithMaxDuration(10 * time.Millisecond))
+	for i := range 200 {
+		w.AddFact(Fact{Predicate{q, []Term{Integer(i)}}})
+	}
+	// The last predicate never matches, so combine walks ~200^4 tuples in one Apply.
+	w.AddRule(Rule{
+		Head: Predicate{p, []Term{Variable(0)}},
+		Body: []Predicate{
+			{q, []Term{Variable(0)}},
+			{q, []Term{Variable(1)}},
+			{q, []Term{Variable(2)}},
+			{none, []Term{Variable(3)}},
+		},
+	})
+
+	start := time.Now()
+	require.ErrorIs(t, w.Run(syms), ErrWorldRunLimitTimeout)
+	require.Less(t, time.Since(start), time.Second)
+}
