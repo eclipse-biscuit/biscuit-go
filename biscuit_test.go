@@ -24,15 +24,15 @@ func TestBiscuit(t *testing.T) {
 		WithRNG(rng),
 		WithRootKeyID(rootKeyID))
 
-	builder.AddAuthorityFact(Fact{
+	require.NoError(t, builder.AddAuthorityFact(Fact{
 		Predicate: Predicate{Name: "right", IDs: []Term{String("/a/file1"), String("read")}},
-	})
-	builder.AddAuthorityFact(Fact{
+	}))
+	require.NoError(t, builder.AddAuthorityFact(Fact{
 		Predicate: Predicate{Name: "right", IDs: []Term{String("/a/file1"), String("write")}},
-	})
-	builder.AddAuthorityFact(Fact{
+	}))
+	require.NoError(t, builder.AddAuthorityFact(Fact{
 		Predicate: Predicate{Name: "right", IDs: []Term{String("/a/file2"), String("read")}},
-	})
+	}))
 
 	builder.SetContext(contextText)
 
@@ -58,7 +58,7 @@ func TestBiscuit(t *testing.T) {
 	}
 
 	block2 := b1deser.CreateBlock()
-	block2.AddCheck(Check{
+	require.NoError(t, block2.AddCheck(Check{
 		Queries: []Rule{
 			{
 				Head: Predicate{Name: "caveat", IDs: []Term{Variable("0")}},
@@ -69,7 +69,7 @@ func TestBiscuit(t *testing.T) {
 				},
 			},
 		},
-	})
+	}))
 
 	b2, err := b1deser.Append(rng, block2.Build())
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestBiscuit(t *testing.T) {
 	require.NoError(t, err)
 
 	block3 := b2deser.CreateBlock()
-	block3.AddCheck(Check{
+	require.NoError(t, block3.AddCheck(Check{
 		Queries: []Rule{
 			{
 				Head: Predicate{Name: "caveat2", IDs: []Term{String("/a/file1")}},
@@ -91,7 +91,7 @@ func TestBiscuit(t *testing.T) {
 				},
 			},
 		},
-	})
+	}))
 
 	b3, err := b2deser.Append(rng, block3.Build())
 	require.NoError(t, err)
@@ -132,15 +132,15 @@ func TestSealedBiscuit(t *testing.T) {
 
 	builder := NewBuilder(privateRoot)
 
-	builder.AddAuthorityFact(Fact{
+	require.NoError(t, builder.AddAuthorityFact(Fact{
 		Predicate: Predicate{Name: "right", IDs: []Term{String("/a/file1"), String("read")}},
-	})
-	builder.AddAuthorityFact(Fact{
+	}))
+	require.NoError(t, builder.AddAuthorityFact(Fact{
 		Predicate: Predicate{Name: "right", IDs: []Term{String("/a/file1"), String("write")}},
-	})
-	builder.AddAuthorityFact(Fact{
+	}))
+	require.NoError(t, builder.AddAuthorityFact(Fact{
 		Predicate: Predicate{Name: "right", IDs: []Term{String("/a/file2"), String("read")}},
-	})
+	}))
 
 	b1, err := builder.Build()
 	require.NoError(t, err)
@@ -153,7 +153,7 @@ func TestSealedBiscuit(t *testing.T) {
 	require.NoError(t, err)
 
 	block2 := b1deser.CreateBlock()
-	block2.AddCheck(Check{
+	require.NoError(t, block2.AddCheck(Check{
 		Queries: []Rule{
 			{
 				Head: Predicate{Name: "caveat", IDs: []Term{Variable("0")}},
@@ -164,7 +164,7 @@ func TestSealedBiscuit(t *testing.T) {
 				},
 			},
 		},
-	})
+	}))
 
 	b2, err := b1deser.Append(rng, block2.Build())
 	require.NoError(t, err)
@@ -189,21 +189,21 @@ func TestBiscuitRules(t *testing.T) {
 
 	builder := NewBuilder(privateRoot)
 
-	builder.AddAuthorityRule(Rule{
+	require.NoError(t, builder.AddAuthorityRule(Rule{
 		Head: Predicate{Name: "right", IDs: []Term{Variable("1"), String("read")}},
 		Body: []Predicate{
 			{Name: "resource", IDs: []Term{Variable("1")}},
 			{Name: "owner", IDs: []Term{Variable("0"), Variable("1")}},
 		},
-	})
-	builder.AddAuthorityRule(Rule{
+	}))
+	require.NoError(t, builder.AddAuthorityRule(Rule{
 		Head: Predicate{Name: "right", IDs: []Term{Variable("1"), String("write")}},
 		Body: []Predicate{
 			{Name: "resource", IDs: []Term{Variable("1")}},
 			{Name: "owner", IDs: []Term{Variable("0"), Variable("1")}},
 		},
-	})
-	builder.AddAuthorityCheck(Check{Queries: []Rule{
+	}))
+	require.NoError(t, builder.AddAuthorityCheck(Check{Queries: []Rule{
 		{
 			Head: Predicate{Name: "allowed_users", IDs: []Term{Variable("0")}},
 			Body: []Predicate{
@@ -217,7 +217,7 @@ func TestBiscuitRules(t *testing.T) {
 				},
 			},
 		},
-	}})
+	}}))
 
 	b1, err := builder.Build()
 	require.NoError(t, err)
@@ -228,7 +228,7 @@ func TestBiscuitRules(t *testing.T) {
 	verifyOwner(t, *b1, publicRoot, map[string]bool{"alice": true, "bob": true, "eve": false})
 
 	block := b1.CreateBlock()
-	block.AddCheck(Check{
+	require.NoError(t, block.AddCheck(Check{
 		Queries: []Rule{
 			{
 				Head: Predicate{Name: "caveat1", IDs: []Term{Variable("0"), Variable("1")}},
@@ -239,8 +239,8 @@ func TestBiscuitRules(t *testing.T) {
 				},
 			},
 		},
-	})
-	block.AddCheck(Check{
+	}))
+	require.NoError(t, block.AddCheck(Check{
 		Queries: []Rule{
 			{
 				Head: Predicate{Name: "caveat2", IDs: []Term{Variable("0")}},
@@ -250,7 +250,7 @@ func TestBiscuitRules(t *testing.T) {
 				},
 			},
 		},
-	})
+	}))
 
 	b2, err := b1.Append(rng, block.Build())
 	require.NoError(t, err)
@@ -267,10 +267,10 @@ func TestBiscuitBytesSetEquality(t *testing.T) {
 	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
 
 	builder := NewBuilder(privateRoot)
-	builder.AddAuthorityFact(Fact{
+	require.NoError(t, builder.AddAuthorityFact(Fact{
 		Predicate: Predicate{Name: "keys", IDs: []Term{Set{Bytes{0x01}, Bytes{0x02}}}},
-	})
-	builder.AddAuthorityCheck(Check{Queries: []Rule{
+	}))
+	require.NoError(t, builder.AddAuthorityCheck(Check{Queries: []Rule{
 		{
 			Head: Predicate{Name: "known_keys", IDs: []Term{Variable("k")}},
 			Body: []Predicate{{Name: "keys", IDs: []Term{Variable("k")}}},
@@ -282,7 +282,7 @@ func TestBiscuitBytesSetEquality(t *testing.T) {
 				},
 			},
 		},
-	}})
+	}}))
 
 	b, err := builder.Build()
 	require.NoError(t, err)
@@ -380,10 +380,10 @@ func TestGenerateWorld(t *testing.T) {
 		},
 	}
 
-	build.AddAuthorityFact(authorityFact1)
-	build.AddAuthorityFact(authorityFact2)
-	build.AddAuthorityRule(authorityRule1)
-	build.AddAuthorityRule(authorityRule2)
+	require.NoError(t, build.AddAuthorityFact(authorityFact1))
+	require.NoError(t, build.AddAuthorityFact(authorityFact2))
+	require.NoError(t, build.AddAuthorityRule(authorityRule1))
+	require.NoError(t, build.AddAuthorityRule(authorityRule2))
 
 	b, err := build.Build()
 	require.NoError(t, err)
@@ -407,10 +407,10 @@ func TestGenerateWorld(t *testing.T) {
 			{Name: "owner", IDs: []Term{String("alice"), Variable("1")}},
 		},
 	}
-	blockBuild.AddRule(blockRule)
+	require.NoError(t, blockBuild.AddRule(blockRule))
 
 	blockFact := Fact{Predicate{Name: "resource", IDs: []Term{String("file1")}}}
-	blockBuild.AddFact(blockFact)
+	require.NoError(t, blockBuild.AddFact(blockFact))
 
 	b2, err := b.Append(rng, blockBuild.Build())
 	require.NoError(t, err)
@@ -435,9 +435,9 @@ func TestAppendErrors(t *testing.T) {
 	rng := rand.Reader
 	_, privateRoot, _ := ed25519.GenerateKey(rng)
 	builder := NewBuilder(privateRoot)
-	builder.AddAuthorityFact(Fact{
+	require.NoError(t, builder.AddAuthorityFact(Fact{
 		Predicate: Predicate{Name: "newfact", IDs: []Term{String("/a/file1"), String("read")}},
-	})
+	}))
 
 	t.Run("Strings overlap", func(t *testing.T) {
 		b, err := builder.Build()
@@ -562,10 +562,10 @@ func TestGetBlockID(t *testing.T) {
 	for i := range 2 {
 		blockBuilder := b.CreateBlock()
 		for j := range 3 {
-			blockBuilder.AddFact(Fact{Predicate: Predicate{
+			require.NoError(t, blockBuilder.AddFact(Fact{Predicate: Predicate{
 				Name: fmt.Sprintf("block_%d_fact_%d", i, j),
 				IDs:  []Term{String("block"), Integer(i), Integer(j)},
-			}})
+			}}))
 		}
 		b, err = b.Append(rng, blockBuilder.Build())
 		require.NoError(t, err)
@@ -618,26 +618,26 @@ func TestInvalidRuleGeneration(t *testing.T) {
 	rng := rand.Reader
 	publicRoot, privateRoot, _ := ed25519.GenerateKey(rng)
 	builder := NewBuilder(privateRoot)
-	builder.AddAuthorityCheck(Check{Queries: []Rule{
+	require.NoError(t, builder.AddAuthorityCheck(Check{Queries: []Rule{
 		{
 			Head: Predicate{Name: "check1"},
 			Body: []Predicate{
 				{Name: "operation", IDs: []Term{String("read")}},
 			},
 		},
-	}})
+	}}))
 
 	b, err := builder.Build()
 	require.NoError(t, err)
 	t.Log(b.String())
 
 	blockBuilder := b.CreateBlock()
-	blockBuilder.AddRule(Rule{
+	require.NoError(t, blockBuilder.AddRule(Rule{
 		Head: Predicate{Name: "operation", IDs: []Term{Variable("sym"), String("read")}},
 		Body: []Predicate{
 			{Name: "operation", IDs: []Term{Variable("sym"), Variable("operation")}},
 		},
-	})
+	}))
 
 	block := blockBuilder.Build()
 	b, err = b.Append(rng, block)

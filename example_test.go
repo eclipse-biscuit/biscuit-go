@@ -27,7 +27,10 @@ func ExampleBiscuit() {
 	}
 
 	builder := biscuit.NewBuilder(privateRoot)
-	builder.AddBlock(authority)
+	err = builder.AddBlock(authority)
+	if err != nil {
+		panic(fmt.Errorf("failed adding Biscuit authority block: %v", err))
+	}
 
 	b, err := builder.Build()
 	if err != nil {
@@ -55,7 +58,10 @@ func ExampleBiscuit() {
 	if err != nil {
 		panic(fmt.Errorf("failed to parse block: %v", err))
 	}
-	blockBuilder.AddBlock(block)
+	err = blockBuilder.AddBlock(block)
+	if err != nil {
+		panic(fmt.Errorf("failed adding Biscuit attenuation block: %v", err))
+	}
 
 	b2, err := deser.Append(rng, blockBuilder.Build())
 	if err != nil {
@@ -96,7 +102,7 @@ func ExampleBiscuit() {
 
 		fmt.Println("forbidden to read /a/file1.txt")
 	} else {
-		//fmt.Println(v1.PrintWorld())
+		// fmt.Println(v1.PrintWorld())
 
 		fmt.Println("allowed to read /a/file1.txt")
 	}

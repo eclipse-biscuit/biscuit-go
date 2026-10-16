@@ -165,7 +165,7 @@ func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
 	authority, err := p.Block(blocks[0].Code, nil)
 	require.NoError(t, err)
 	builder := biscuit.NewBuilder(privateRoot)
-	builder.AddBlock(authority)
+	require.NoError(t, builder.AddBlock(authority))
 	r, err := builder.Build()
 	require.NoError(t, err)
 	rebuilt := *r
@@ -174,7 +174,7 @@ func CompareBlocks(token biscuit.Biscuit, blocks []Block, t *testing.T) {
 		parsed, err := p.Block(b.Code, nil)
 		require.NoError(t, err)
 		builder := rebuilt.CreateBlock()
-		builder.AddBlock(parsed)
+		require.NoError(t, builder.AddBlock(parsed))
 		r, err := rebuilt.Append(rng, builder.Build())
 		require.NoError(t, err)
 		rebuilt = *r

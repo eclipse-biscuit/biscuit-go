@@ -442,7 +442,8 @@ func (w *World) Query(pred Predicate) *FactSet {
 
 func (w *World) QueryRule(rule Rule, syms *SymbolTable) *FactSet {
 	newFacts := &FactSet{}
-	rule.Apply(w.facts, newFacts, syms)
+	// swallowing the error explicitly since propagating it would break the current API
+	_ = rule.Apply(w.facts, newFacts, syms)
 	return newFacts
 }
 
