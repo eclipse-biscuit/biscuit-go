@@ -5,8 +5,8 @@ package biscuit
 
 import "io"
 
-type compositionOption interface {
-	builderOption
+type CompositionOption interface {
+	BuilderOption
 	biscuitOption
 }
 
@@ -29,7 +29,7 @@ func (o rngOption) applyToBiscuit(b *biscuitOptions) error {
 
 // WithRNG supplies a random number generator as a byte stream from which to read when generating
 // key pairs with which to sign blocks within biscuits.
-func WithRNG(r io.Reader) compositionOption {
+func WithRNG(r io.Reader) CompositionOption {
 	return rngOption{r}
 }
 
@@ -49,6 +49,6 @@ func (o rootKeyIDOption) applyToBiscuit(b *biscuitOptions) error {
 // WithRootKeyID specifies the identifier for the root key pair used to sign a biscuit's authority
 // block, allowing a consuming party to later select the corresponding public key to validate that
 // signature.
-func WithRootKeyID(id uint32) compositionOption {
+func WithRootKeyID(id uint32) CompositionOption {
 	return rootKeyIDOption(id)
 }
