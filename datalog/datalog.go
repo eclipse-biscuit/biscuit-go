@@ -220,6 +220,11 @@ func (e InvalidRuleError) Error() string {
 }
 
 func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error {
+	return r.apply(facts, newFacts, syms, nil)
+}
+
+// apply returns ErrWorldRunLimitTimeout once the budget's deadline passes. A nil budget disables the limit.
+func (r Rule) apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable, budget *runBudget) error {
 	// extract all variables from the rule body
 	variables := make(MatchedVariables)
 	for _, predicate := range r.Body {
@@ -232,7 +237,7 @@ func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error 
 		}
 	}
 
-	combinations, err := combine(variables, r.Body, r.Expressions, facts, syms)
+	combinations, err := combine(variables, r.Body, r.Expressions, facts, syms, budget)
 	if err != nil {
 		return err
 	}
@@ -250,6 +255,10 @@ func (r Rule) Apply(facts *FactSet, newFacts *FactSet, syms *SymbolTable) error 
 			}
 
 			predicate.Terms[i] = *v
+		}
+		// Insert scans newFacts, so materialising n facts is O(n²)
+		if err := budget.tick(len(*newFacts) + 1); err != nil {
+			return err
 		}
 		newFacts.Insert(Fact{predicate})
 	}
@@ -310,6 +319,36 @@ var defaultRunLimits = runLimits{
 	maxDuration:   2 * time.Millisecond,
 }
 
+// runBudget: loops on the Run path report work through tick; the clock is
+// read once per budgetCheckEvery units.
+type runBudget struct {
+	now      func() time.Time
+	deadline time.Time
+	left     int
+}
+
+const (
+	// in units of one Match or Equal call; a clock read costs about 10 units
+	budgetCheckEvery = 1024
+	// a full binding (map clone + expressions) costs about this many units
+	tupleCost = 32
+)
+
+// tick is a no-op on a nil budget, so Rule.Apply and QueryRule pay only the nil check.
+func (b *runBudget) tick(work int) error {
+	if b == nil {
+		return nil
+	}
+	if b.left -= work; b.left > 0 {
+		return nil
+	}
+	b.left = budgetCheckEvery
+	if b.now().After(b.deadline) {
+		return ErrWorldRunLimitTimeout
+	}
+	return nil
+}
+
 var (
 	ErrWorldRunLimitMaxFacts      = errors.New("datalog: world runtime limit: too many facts")
 	ErrWorldRunLimitMaxIterations = errors.New("datalog: world runtime limit: too many iterations")
@@ -341,6 +380,8 @@ type World struct {
 	rules []Rule
 
 	runLimits runLimits
+	// clock is read by the run limits; nil means time.Now and tests inject a fake one
+	clock func() time.Time
 }
 
 func NewWorld(opts ...WorldOption) *World {
@@ -376,25 +417,41 @@ func (w *World) Rules() []Rule {
 	return w.rules
 }
 
+func (w *World) now() time.Time {
+	if w.clock == nil {
+		return time.Now()
+	}
+	return w.clock()
+}
+
 func (w *World) Run(syms *SymbolTable) error {
-	deadline := time.Now().Add(w.runLimits.maxDuration)
+	deadline := w.now().Add(w.runLimits.maxDuration)
+	budget := &runBudget{now: w.now, deadline: deadline, left: budgetCheckEvery}
 	for i := 0; i < w.runLimits.maxIterations; i++ {
 		// Checked here as well so the limit applies to a world without rules.
-		if time.Now().After(deadline) {
+		if w.now().After(deadline) {
 			return ErrWorldRunLimitTimeout
 		}
 		var newFacts FactSet
 		for _, r := range w.rules {
-			if time.Now().After(deadline) {
+			if w.now().After(deadline) {
 				return ErrWorldRunLimitTimeout
 			}
-			if err := r.Apply(w.facts, &newFacts, syms); err != nil {
+			if err := r.apply(w.facts, &newFacts, syms, budget); err != nil {
 				return err
 			}
 		}
 
+		// Insert only appends, so a timeout during the merge rolls back to the
+		// previous iteration: the world never holds part of an iteration.
 		prevCount := len(*w.facts)
-		w.facts.InsertAll([]Fact(newFacts))
+		for _, f := range newFacts {
+			if err := budget.tick(len(*w.facts) + 1); err != nil {
+				*w.facts = (*w.facts)[:prevCount]
+				return err
+			}
+			w.facts.Insert(f)
+		}
 
 		newCount := len(*w.facts)
 		if newCount >= w.runLimits.maxFacts {
@@ -454,6 +511,7 @@ func (w *World) Clone() *World {
 		facts:     newFacts,
 		rules:     append([]Rule{}, w.rules...),
 		runLimits: w.runLimits,
+		clock:     w.clock,
 	}
 }
 
@@ -489,6 +547,7 @@ func combine(
 	expressions []Expression,
 	facts *FactSet,
 	syms *SymbolTable,
+	budget *runBudget,
 ) ([]MatchedVariables, error) {
 	var res []MatchedVariables
 
@@ -515,6 +574,11 @@ func combine(
 						break
 					} else {
 						current += 1
+						// a descent starts a scan of at most |facts| steps; ticking
+						// them here keeps the check out of the inner loop
+						if err := budget.tick(len(*facts)); err != nil {
+							return nil, err
+						}
 					}
 				} else {
 					// did not match, we either increase the current index or the previous one
@@ -527,6 +591,9 @@ func combine(
 		}
 
 		// extract and check variables, check expressions, send variables
+		if err := budget.tick(tupleCost); err != nil {
+			return nil, err
+		}
 		var vars = variables.Clone()
 		var matching = true
 

@@ -59,6 +59,49 @@ func BenchmarkWorldRunTransitiveClosure(b *testing.B) {
 	}
 }
 
+// Three-way join over 3n facts through Run. c(-1) matches no fact, so combine
+// walks 3n³ steps without a single full match: no allocations, the scan cost
+// (including the deadline budget) dominates.
+func BenchmarkWorldRunJoin(b *testing.B) {
+	for _, n := range []int{50, 100, 200} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			syms := &SymbolTable{}
+			a := syms.Insert("a")
+			bb := syms.Insert("b")
+			c := syms.Insert("c")
+			abc := syms.Insert("abc")
+
+			facts := make([]Fact, 0, 3*n)
+			for i := range n {
+				for _, p := range []String{a, bb, c} {
+					facts = append(facts, Fact{Predicate{p, []Term{Integer(i)}}})
+				}
+			}
+			rule := Rule{
+				Head: Predicate{abc, []Term{Variable(0), Variable(1)}},
+				Body: []Predicate{
+					{a, []Term{Variable(0)}},
+					{bb, []Term{Variable(1)}},
+					{c, []Term{Integer(-1)}},
+				},
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				w := benchWorld()
+				for _, f := range facts {
+					w.AddFact(f)
+				}
+				w.AddRule(rule)
+				if err := w.Run(syms); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 // Inserting n distinct facts; FactSet.Insert scans for duplicates on each insert.
 func BenchmarkWorldAddFact(b *testing.B) {
 	for _, n := range []int{100, 1000} {
