@@ -4,6 +4,7 @@
 package biscuit
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
@@ -35,6 +36,23 @@ func TestAuthorizerAppliesOptions(t *testing.T) {
 	if err := v.Authorize(); !errors.Is(err, datalog.ErrWorldRunLimitMaxFacts) {
 		t.Fatalf("Authorize() = %v, want %v", err, datalog.ErrWorldRunLimitMaxFacts)
 	}
+}
+
+func TestAuthorizerCanceledContext(t *testing.T) {
+	publicRoot, privateRoot, _ := ed25519.GenerateKey(rand.Reader)
+	b, err := NewBuilder(privateRoot).Build()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	v, err := b.Authorizer(publicRoot)
+	require.NoError(t, err)
+	v.AddPolicy(DefaultAllowPolicy)
+	require.ErrorIs(t, v.AuthorizeContext(ctx), context.Canceled)
+
+	_, err = v.QueryContext(ctx, Rule{Head: Predicate{Name: "x"}})
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestVerifierDefaultPolicy(t *testing.T) {
