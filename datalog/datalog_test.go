@@ -4,6 +4,7 @@
 package datalog
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
@@ -832,5 +833,58 @@ func TestWorldRunTimeoutWithinRule(t *testing.T) {
 
 	start := time.Now()
 	require.ErrorIs(t, w.Run(syms), ErrWorldRunLimitTimeout)
+	require.Less(t, time.Since(start), time.Second)
+}
+
+func TestWorldRunContextCanceled(t *testing.T) {
+	syms := &SymbolTable{}
+	p := syms.Insert("p")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	w := NewWorld()
+	w.AddFact(Fact{Predicate{p, []Term{Integer(1)}}})
+	require.ErrorIs(t, w.RunContext(ctx, syms), context.Canceled)
+}
+
+// A context deadline later than maxDuration leaves the limit's error.
+func TestWorldRunContextLaterDeadline(t *testing.T) {
+	syms := &SymbolTable{}
+	p := syms.Insert("p")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	w := NewWorld(WithMaxDuration(0))
+	w.AddFact(Fact{Predicate{p, []Term{Integer(1)}}})
+	require.ErrorIs(t, w.RunContext(ctx, syms), ErrWorldRunLimitTimeout)
+}
+
+// Same rule as TestWorldRunTimeoutWithinRule, the context expires first.
+func TestWorldRunContextWithinRule(t *testing.T) {
+	syms := &SymbolTable{}
+	p := syms.Insert("p")
+	q := syms.Insert("q")
+	none := syms.Insert("none")
+
+	w := NewWorld(WithMaxDuration(time.Hour))
+	for i := range 200 {
+		w.AddFact(Fact{Predicate{q, []Term{Integer(i)}}})
+	}
+	w.AddRule(Rule{
+		Head: Predicate{p, []Term{Variable(0)}},
+		Body: []Predicate{
+			{q, []Term{Variable(0)}},
+			{q, []Term{Variable(1)}},
+			{q, []Term{Variable(2)}},
+			{none, []Term{Variable(3)}},
+		},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	require.ErrorIs(t, w.RunContext(ctx, syms), context.DeadlineExceeded)
 	require.Less(t, time.Since(start), time.Second)
 }

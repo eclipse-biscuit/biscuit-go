@@ -5,6 +5,7 @@ package datalog
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -319,9 +320,12 @@ var defaultRunLimits = runLimits{
 	maxDuration:   2 * time.Millisecond,
 }
 
-// runBudget: loops on the Run path report work through tick; the clock is
-// read once per budgetCheckEvery units.
+// runBudget: loops on the Run path report work through tick; the clock and
+// done channel are read once per budgetCheckEvery units.
 type runBudget struct {
+	// a channel, not the context: calling ctx.Err() here would make the
+	// budget's fields escape and cost an allocation per Run
+	done     <-chan struct{}
 	now      func() time.Time
 	deadline time.Time
 	left     int
@@ -343,6 +347,17 @@ func (b *runBudget) tick(work int) error {
 		return nil
 	}
 	b.left = budgetCheckEvery
+	return b.check()
+}
+
+// check returns errRunDone once done is closed, ErrWorldRunLimitTimeout once
+// the deadline passes.
+func (b *runBudget) check() error {
+	select {
+	case <-b.done:
+		return errRunDone
+	default:
+	}
 	if b.now().After(b.deadline) {
 		return ErrWorldRunLimitTimeout
 	}
@@ -353,6 +368,9 @@ var (
 	ErrWorldRunLimitMaxFacts      = errors.New("datalog: world runtime limit: too many facts")
 	ErrWorldRunLimitMaxIterations = errors.New("datalog: world runtime limit: too many iterations")
 	ErrWorldRunLimitTimeout       = errors.New("datalog: world runtime limit: timeout")
+
+	// replaced by ctx.Err() in RunContext
+	errRunDone = errors.New("datalog: run context done")
 )
 
 type WorldOption func(w *World)
@@ -425,17 +443,40 @@ func (w *World) now() time.Time {
 }
 
 func (w *World) Run(syms *SymbolTable) error {
+	return w.RunContext(context.Background(), syms)
+}
+
+// RunContext is Run, also stopped with ctx.Err() once ctx is done.
+func (w *World) RunContext(ctx context.Context, syms *SymbolTable) error {
+	// The context's deadline also bounds the budget: its own timer fires
+	// ~250µs late, the budget's clock reads are within a few µs.
 	deadline := w.now().Add(w.runLimits.maxDuration)
-	budget := &runBudget{now: w.now, deadline: deadline, left: budgetCheckEvery}
+	ctxDeadline, ok := ctx.Deadline()
+	ctxFirst := ok && ctxDeadline.Before(deadline)
+	if ctxFirst {
+		deadline = ctxDeadline
+	}
+	err := w.run(ctx.Done(), deadline, syms)
+	switch {
+	case errors.Is(err, errRunDone):
+		return ctx.Err()
+	case ctxFirst && errors.Is(err, ErrWorldRunLimitTimeout):
+		return context.DeadlineExceeded
+	}
+	return err
+}
+
+func (w *World) run(done <-chan struct{}, deadline time.Time, syms *SymbolTable) error {
+	budget := &runBudget{done: done, now: w.now, deadline: deadline, left: budgetCheckEvery}
 	for i := 0; i < w.runLimits.maxIterations; i++ {
 		// Checked here as well so the limit applies to a world without rules.
-		if w.now().After(deadline) {
-			return ErrWorldRunLimitTimeout
+		if err := budget.check(); err != nil {
+			return err
 		}
 		var newFacts FactSet
 		for _, r := range w.rules {
-			if w.now().After(deadline) {
-				return ErrWorldRunLimitTimeout
+			if err := budget.check(); err != nil {
+				return err
 			}
 			if err := r.apply(w.facts, &newFacts, syms, budget); err != nil {
 				return err
