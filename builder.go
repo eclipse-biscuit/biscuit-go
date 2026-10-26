@@ -42,7 +42,7 @@ type builderOptions struct {
 	context      string
 }
 
-type builderOption interface {
+type BuilderOption interface {
 	applyToBuilder(b *builderOptions)
 }
 
@@ -56,11 +56,11 @@ func (o symbolsOption) applyToBuilder(b *builderOptions) {
 }
 
 // WithSymbols supplies a symbol table to use when composing biscuits.
-func WithSymbols(symbols *datalog.SymbolTable) builderOption {
+func WithSymbols(symbols *datalog.SymbolTable) BuilderOption {
 	return symbolsOption{symbols}
 }
 
-func NewBuilder(root ed25519.PrivateKey, opts ...builderOption) Builder {
+func NewBuilder(root ed25519.PrivateKey, opts ...BuilderOption) Builder {
 	b := &builderOptions{
 		rootKey:      root,
 		symbols:      defaultSymbolTable.Clone(),

@@ -4,8 +4,13 @@ linters:
   enable:
     # could be replaced by revive, but it raises too many warnings at the moment
     - predeclared
+    - revive
   settings:
     govet:
       disable:
         # participle grammar tags are not key:"value" pairs, see parser/grammar.go
         - structtag
+    revive:
+      # listing rules disables revive defaults
+      rules:
+        - name: unexported-return
